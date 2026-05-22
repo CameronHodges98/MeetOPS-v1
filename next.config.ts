@@ -1,7 +1,8 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Required for Neon serverless driver in Edge/serverless environments
+  serverExternalPackages: ['@neondatabase/serverless'],
+}
 
-export default nextConfig;
+export default nextConfig
