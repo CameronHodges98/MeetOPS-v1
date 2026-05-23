@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
-import { BarChart3, Clock, Users, TrendingUp, Zap } from 'lucide-react'
+import { BarChart3, Clock, Users, TrendingUp, Zap, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
 const NAV_LINKS = [
@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { label: 'UPH Tracker',  href: '/uph-tracker',  icon: TrendingUp },
   { label: 'Cycle Time',   href: '/cycle-time',   icon: Clock },
   { label: 'Coaching',     href: '/coaching',     icon: BarChart3 },
+  { label: 'Import',       href: '/import',       icon: Upload },
 ] as const
 
 export function Navbar() {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { employees, actionLogs, uphStandards, appointments, processingThroughput } from '@/lib/db/schema'
 import { parseActionLogRow } from './parsers/actionLogs'
 import { parseUphStandardRow } from './parsers/uphStandards'
+import { parseEmployeeRow } from './parsers/employees'
 import type { IngestionResult, IngestionError } from '@/lib/ingestion/types'
 import { eq } from 'drizzle-orm'
 
@@ -142,8 +143,38 @@ export async function ingestCsv(
       break
     }
 
-    // TODO: Add cases for 'appointments', 'throughput', 'employees'
-    // following the same pattern above
+    case 'employees': {
+      for (let i = 0; i < rows.length; i++) {
+        const { data, errors } = parseEmployeeRow(rows[i], i + 2)
+        if (errors.length > 0) { allErrors.push(...errors); failed++; continue }
+        if (!data) continue
+
+        await db
+          .insert(employees)
+          .values({
+            paylocityId: data.paylocityId,
+            name: data.name,
+            jobTitle: data.jobTitle as any,
+            location: data.location,
+            status: data.status as any,
+            cargoId: data.cargoId,
+          })
+          .onConflictDoUpdate({
+            target: employees.paylocityId,
+            set: {
+              name: data.name,
+              jobTitle: data.jobTitle as any,
+              location: data.location,
+              status: data.status as any,
+              cargoId: data.cargoId,
+            },
+          })
+        inserted++
+      }
+      break
+    }
+
+    // TODO: Add cases for 'appointments' and 'throughput'
 
     default:
       return {
