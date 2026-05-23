@@ -1,7 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
-// Only these routes are accessible without authentication.
-// Everything else — all tools, all API routes — requires a signed-in Clerk session.
 const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
@@ -12,6 +11,11 @@ export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
     await auth.protect()
   }
+
+  // Forward pathname so the root layout can skip the domain check on /unauthorized
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-pathname', request.nextUrl.pathname)
+  return NextResponse.next({ request: { headers: requestHeaders } })
 })
 
 export const config = {
