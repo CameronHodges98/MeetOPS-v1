@@ -29,10 +29,13 @@ export async function ingestCsv(
 ): Promise<IngestionResult> {
   const startTime = Date.now()
 
-  const parsed = Papa.parse<Record<string, string>>(csvText, {
+  // Strip UTF-8 BOM if present — Paylocity exports include it
+  const cleanedCsv = csvText.replace(/^﻿/, '')
+
+  const parsed = Papa.parse<Record<string, string>>(cleanedCsv, {
     header: true,
     skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
+    transformHeader: (h) => h.replace(/^﻿/, '').trim(),
   })
 
   if (parsed.errors.length > 0) {
