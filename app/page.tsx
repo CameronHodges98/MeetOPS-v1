@@ -7,40 +7,40 @@ const TOOLS = [
     description: 'Real-time headcount planning. Track staffing vs. demand by department and hour. Flex labor to cover gaps.',
     href: '/shift-plan',
     icon: Users,
-    status: 'active',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+    cardBg: 'bg-blue-50 dark:bg-blue-950/30',
+    border: 'border-blue-200 dark:border-blue-800',
   },
   {
     title: 'UPH Tracker',
     description: 'Live Points Per Hour by employee, supervisor, and department. Compare actuals against UPH standards.',
     href: '/uph-tracker',
     icon: TrendingUp,
-    status: 'active',
-    color: 'text-green-600',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    iconColor: 'text-green-600 dark:text-green-400',
+    iconBg: 'bg-green-100 dark:bg-green-900/40',
+    cardBg: 'bg-green-50 dark:bg-green-950/30',
+    border: 'border-green-200 dark:border-green-800',
   },
   {
     title: 'Cycle Time',
     description: 'Identify per-employee action bottlenecks using consecutive same-action timestamps. Data-driven coaching points.',
     href: '/cycle-time',
     icon: Clock,
-    status: 'active',
-    color: 'text-amber-600',
-    bgColor: 'bg-amber-50',
-    borderColor: 'border-amber-200',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
+    cardBg: 'bg-amber-50 dark:bg-amber-950/30',
+    border: 'border-amber-200 dark:border-amber-800',
   },
   {
     title: 'Coaching',
     description: 'Assign trainers, track coaching sessions, and manage performance improvement workflows end-to-end.',
     href: '/coaching',
     icon: BarChart3,
-    status: 'active',
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
+    iconColor: 'text-purple-600 dark:text-purple-400',
+    iconBg: 'bg-purple-100 dark:bg-purple-900/40',
+    cardBg: 'bg-purple-50 dark:bg-purple-950/30',
+    border: 'border-purple-200 dark:border-purple-800',
   },
 ] as const
 
@@ -61,11 +61,11 @@ export default function HubPage() {
             <Link
               key={tool.href}
               href={tool.href}
-              className={`group block rounded-xl border-2 ${tool.borderColor} ${tool.bgColor} p-6 transition-all hover:shadow-md hover:scale-[1.01]`}
+              className={`group block rounded-xl border-2 ${tool.border} ${tool.cardBg} p-6 transition-all hover:shadow-md hover:scale-[1.01]`}
             >
               <div className="flex items-start justify-between">
-                <div className={`p-2 rounded-lg bg-white shadow-sm`}>
-                  <Icon className={`h-6 w-6 ${tool.color}`} />
+                <div className={`p-2 rounded-lg ${tool.iconBg}`}>
+                  <Icon className={`h-6 w-6 ${tool.iconColor}`} />
                 </div>
                 <ArrowRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-1" />
               </div>

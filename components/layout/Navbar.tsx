@@ -4,9 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
-import { BarChart3, Clock, Users, TrendingUp, Zap, Upload } from 'lucide-react'
+import { BarChart3, Clock, Users, TrendingUp, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { ImportModal } from '@/components/shared/ImportModal'
+import { useTheme } from '@/components/theme/ThemeProvider'
+import { WarehouseSelector } from '@/components/layout/WarehouseSelector'
 
 const NAV_LINKS = [
   { label: 'Shift Plan',   href: '/shift-plan',   icon: Users },
@@ -14,6 +16,36 @@ const NAV_LINKS = [
   { label: 'Cycle Time',   href: '/cycle-time',   icon: Clock },
   { label: 'Coaching',     href: '/coaching',     icon: BarChart3 },
 ] as const
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+
+  const options = [
+    { value: 'light', icon: Sun },
+    { value: 'system', icon: Monitor },
+    { value: 'dark', icon: Moon },
+  ] as const
+
+  return (
+    <div className="flex items-center rounded-md border border-border bg-muted p-0.5 gap-0.5">
+      {options.map(({ value, icon: Icon }) => (
+        <button
+          key={value}
+          onClick={() => setTheme(value)}
+          title={value.charAt(0).toUpperCase() + value.slice(1)}
+          className={cn(
+            'flex items-center justify-center h-7 w-7 rounded transition-colors',
+            theme === value
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export function Navbar() {
   const pathname = usePathname()
@@ -54,6 +86,8 @@ export function Navbar() {
 
             {/* Right side */}
             <div className="flex items-center gap-3 shrink-0">
+              <WarehouseSelector />
+              <ThemeToggle />
               <button
                 onClick={() => setImportOpen(true)}
                 className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"

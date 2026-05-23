@@ -66,8 +66,8 @@ export const SHIFT_CONFIG = {
   DEFAULT_SHIFT_HOURS: 10,
 
   // Hours of the day the facility operates (24hr format)
-  FACILITY_OPEN_HOUR: 4,   // 4 AM
-  FACILITY_CLOSE_HOUR: 22, // 10 PM
+  FACILITY_OPEN_HOUR: 5,   // 5 AM
+  FACILITY_CLOSE_HOUR: 19, // 7 PM
 
   // Minimum headcount per active department during operating hours
   MIN_HEADCOUNT_PER_DEPT: 1,
@@ -84,6 +84,40 @@ export const COACHING_CONFIG = {
   // Maximum active trainees one trainer can be assigned simultaneously
   MAX_TRAINEES_PER_TRAINER: 3,
 } as const
+
+// ============================================================
+// Job Title → Department mapping
+// Used by shift planner to group employees into plannable units.
+// ============================================================
+
+// ============================================================
+// Shift Plan Quarters
+// The 4 staffing periods within a shift day. Each quarter has a
+// start hour (24h) and a range of hours used for historical demand
+// aggregation. label is displayed in the UI.
+// ============================================================
+
+export const SHIFT_QUARTERS = [
+  { quarter: 1, label: 'Q1 · 5 AM',  startHour: 5,  hours: [5, 6, 7] },
+  { quarter: 2, label: 'Q2 · 8 AM',  startHour: 8,  hours: [8, 9, 10] },
+  { quarter: 3, label: 'Q3 · 11 AM', startHour: 11, hours: [11, 12, 13, 14] },
+  { quarter: 4, label: 'Q4 · 3 PM',  startHour: 15, hours: [15, 16, 17, 18] },
+] as const
+
+export type ShiftQuarter = typeof SHIFT_QUARTERS[number]['quarter']
+
+// ============================================================
+// Departments used in shift planning (derived from DEPARTMENT_MAP)
+// Excludes Management and Safety — these are not headcount-planned
+// the same way as production departments.
+// ============================================================
+
+export const PRODUCTION_DEPARTMENTS = [
+  'Picking', 'Processing', 'Load Out', 'Put Away',
+  'Lot', 'Returns', 'Material Handling',
+] as const
+
+export type ProductionDepartment = typeof PRODUCTION_DEPARTMENTS[number]
 
 // ============================================================
 // Job Title → Department mapping

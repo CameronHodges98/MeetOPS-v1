@@ -520,6 +520,116 @@ export const trainingAssignmentsRelations = relations(
 )
 
 // ============================================================
+// WAREHOUSES
+// One row per physical facility. name maps 1:1 to the location
+// varchar already stored in employees, action_logs, shift_plans.
+// No migration needed for existing data — Mesa is auto-seeded.
+// ============================================================
+
+export const warehouses = pgTable('warehouses', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+})
+
+// ============================================================
+// USER PREFERENCES
+// Stores each Clerk user's default warehouse selection.
+// clerkUserId is the stable key from Clerk auth.
+// ============================================================
+
+export const userPreferences = pgTable('user_preferences', {
+  id: serial('id').primaryKey(),
+  clerkUserId: varchar('clerk_user_id', { length: 100 }).notNull().unique(),
+  defaultWarehouseId: integer('default_warehouse_id').references(() => warehouses.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+// ============================================================
+// SHIFT PLANS
+// One row per date/location — the container for a day's plan.
+// All department submissions and flex entries hang off this record.
+// publishedAt being non-null means the Ops Manager has locked and
+// distributed the plan; submissions become read-only after that.
+// ============================================================
+
+export const shiftPlans = pgTable(
+  'shift_plans',
+  {
+    id: serial('id').primaryKey(),
+    date: date('date').notNull(),
+    location: varchar('location', { length: 50 }).notNull().default('Mesa'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    publishedByClerkId: varchar('published_by_clerk_id', { length: 100 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    datLocationIdx: uniqueIndex('shift_plans_date_location_idx').on(table.date, table.location),
+  })
+)
+
+// ============================================================
+// SHIFT PLAN SUBMISSIONS
+// One row per department per day. Area Managers fill in callouts,
+// OT available, and exempt employees before the Ops Manager
+// publishes the plan. exemptEntries is a JSONB array of
+// { count: number, reason: string } objects.
+// ============================================================
+
+export const shiftPlanSubmissions = pgTable(
+  'shift_plan_submissions',
+  {
+    id: serial('id').primaryKey(),
+    shiftPlanId: integer('shift_plan_id')
+      .notNull()
+      .references(() => shiftPlans.id),
+    department: varchar('department', { length: 100 }).notNull(),
+    calloutCount: integer('callout_count').notNull().default(0),
+    otCount: integer('ot_count').notNull().default(0),
+    // [{ count: number, reason: string }]
+    exemptEntries: jsonb('exempt_entries').notNull().default('[]'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedByClerkId: varchar('submitted_by_clerk_id', { length: 100 }),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    planDeptIdx: uniqueIndex('shift_plan_submissions_plan_dept_idx').on(
+      table.shiftPlanId,
+      table.department
+    ),
+  })
+)
+
+// ============================================================
+// FLEX PLAN ENTRIES
+// Each row is one labor flex move the Ops Manager creates after
+// reviewing all department submissions. quarter maps to the 4
+// staffing periods: 1=8AM, 2=11AM, 3=1PM, 4=3PM.
+// ============================================================
+
+export const flexPlanEntries = pgTable(
+  'flex_plan_entries',
+  {
+    id: serial('id').primaryKey(),
+    shiftPlanId: integer('shift_plan_id')
+      .notNull()
+      .references(() => shiftPlans.id),
+    quarter: integer('quarter').notNull(), // 1–4
+    fromDepartment: varchar('from_department', { length: 100 }).notNull(),
+    toDepartment: varchar('to_department', { length: 100 }).notNull(),
+    headcountMoved: integer('headcount_moved').notNull(),
+    notes: varchar('notes', { length: 500 }),
+    createdByClerkId: varchar('created_by_clerk_id', { length: 100 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    planIdx: index('flex_plan_entries_plan_idx').on(table.shiftPlanId),
+  })
+)
+
+// ============================================================
 // INFERRED TYPES
 // These are the TypeScript types for every table, automatically
 // derived from the schema above. Import from here — never write
@@ -544,3 +654,13 @@ export type Appointment = typeof appointments.$inferSelect
 export type NewAppointment = typeof appointments.$inferInsert
 export type ProcessingThroughput = typeof processingThroughput.$inferSelect
 export type NewProcessingThroughput = typeof processingThroughput.$inferInsert
+export type ShiftPlan = typeof shiftPlans.$inferSelect
+export type NewShiftPlan = typeof shiftPlans.$inferInsert
+export type ShiftPlanSubmission = typeof shiftPlanSubmissions.$inferSelect
+export type NewShiftPlanSubmission = typeof shiftPlanSubmissions.$inferInsert
+export type FlexPlanEntry = typeof flexPlanEntries.$inferSelect
+export type NewFlexPlanEntry = typeof flexPlanEntries.$inferInsert
+export type Warehouse = typeof warehouses.$inferSelect
+export type NewWarehouse = typeof warehouses.$inferInsert
+export type UserPreference = typeof userPreferences.$inferSelect
+export type NewUserPreference = typeof userPreferences.$inferInsert

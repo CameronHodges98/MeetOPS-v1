@@ -1,15 +1,16 @@
 import { create } from 'zustand'
+import type { ShiftQuarter } from '@/config/constants'
 
 interface ShiftPlanState {
   selectedDate: string
-  selectedDepartment: string | null
+  selectedQuarter: ShiftQuarter | null   // null = no drawer open
   setSelectedDate: (date: string) => void
-  setSelectedDepartment: (dept: string | null) => void
+  setSelectedQuarter: (quarter: ShiftQuarter | null) => void
 }
 
 export const useShiftPlanStore = create<ShiftPlanState>((set) => ({
   selectedDate: new Date().toISOString().split('T')[0],
-  selectedDepartment: null,
+  selectedQuarter: null,
   setSelectedDate: (date) => set({ selectedDate: date }),
-  setSelectedDepartment: (dept) => set({ selectedDepartment: dept }),
+  setSelectedQuarter: (quarter) => set({ selectedQuarter: quarter }),
 }))
