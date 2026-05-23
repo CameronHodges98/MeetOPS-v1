@@ -1,5 +1,6 @@
 import type { ParsedUphStandard, IngestionError } from '@/lib/ingestion/types'
 
+// Column names from UPH_scale.csv
 const COLUMN_MAP = {
   action: 'ACTION',
   location: 'LOCATION',
@@ -7,7 +8,7 @@ const COLUMN_MAP = {
   programProfile: 'PROGRAM PROFILE',
   secPerAction: 'SEC / ACTION',
   pointsPerAction: 'POINTS / ACTION',
-  uph: 'UPH (Actions/HR)',
+  uph: 'ACTIONS / HOUR',
 } as const
 
 export function parseUphStandardRow(
@@ -28,7 +29,7 @@ export function parseUphStandardRow(
   if (!pointsPerActionRaw || isNaN(Number(pointsPerActionRaw)))
     errors.push({ row: rowIndex, field: 'POINTS / ACTION', value: pointsPerActionRaw, message: 'Invalid points value' })
   if (!uphRaw || isNaN(Number(uphRaw)))
-    errors.push({ row: rowIndex, field: 'UPH (Actions/HR)', value: uphRaw, message: 'Invalid UPH value' })
+    errors.push({ row: rowIndex, field: 'ACTIONS / HOUR', value: uphRaw, message: 'Invalid UPH value' })
 
   if (errors.length > 0) return { data: null, errors }
 

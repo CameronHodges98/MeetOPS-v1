@@ -1,14 +1,15 @@
 import type { ParsedEmployee, IngestionError } from '@/lib/ingestion/types'
 
-// Paylocity export column names — update here if the export format changes
-const COLUMN_MAP = {
-  paylocityId: 'Paylocity Id',
-  name: 'Employee Name',
-  jobTitle: 'Job Title',
-  location: 'Location',
-  status: 'Status',
-  cargoId: 'Cargo Id',
-} as const
+// Paylocity exports the roster as a single "Group" column with hierarchical rows.
+// Each employee produces 5 rows at increasing depths:
+//   " -> {paylocityId}"
+//   " -> {paylocityId} -> {name}"
+//   " -> {paylocityId} -> {name} -> {jobTitle}"
+//   " -> {paylocityId} -> {name} -> {jobTitle} -> {location}"
+//   " -> {paylocityId} -> {name} -> {jobTitle} -> {location} -> {status}"
+//
+// We only process the depth-5 rows (all 5 segments present) since they
+// contain the complete record. Shallower rows are skipped.
 
 const VALID_JOB_TITLES = [
   'Picker',
@@ -35,48 +36,45 @@ export function parseEmployeeRow(
   row: Record<string, string>,
   rowIndex: number
 ): { data: ParsedEmployee | null; errors: IngestionError[] } {
+  const raw = (row['Group'] ?? '').trim()
+
+  // Split on " -> " — depth-5 row produces 6 parts: ["", id, name, title, location, status]
+  const parts = raw.split(' -> ')
+
+  // Skip rows that aren't the complete depth-5 record
+  if (parts.length !== 6) return { data: null, errors: [] }
+
+  const [, paylocityId, name, jobTitleRaw, location, statusRaw] = parts.map((p) => p.trim())
+
   const errors: IngestionError[] = []
 
-  const paylocityId = row[COLUMN_MAP.paylocityId]?.trim()
-  const name = row[COLUMN_MAP.name]?.trim()
-  const jobTitleRaw = row[COLUMN_MAP.jobTitle]?.trim()
-
-  if (!paylocityId) errors.push({ row: rowIndex, field: 'Paylocity Id', message: 'Missing Paylocity ID' })
-  if (!name) errors.push({ row: rowIndex, field: 'Employee Name', message: 'Missing employee name' })
-  if (!jobTitleRaw) errors.push({ row: rowIndex, field: 'Job Title', message: 'Missing job title' })
-
+  if (!paylocityId) errors.push({ row: rowIndex, field: 'Group', message: 'Missing Paylocity ID' })
+  if (!name) errors.push({ row: rowIndex, field: 'Group', message: 'Missing employee name' })
+  if (!jobTitleRaw) errors.push({ row: rowIndex, field: 'Group', message: 'Missing job title' })
   if (errors.length > 0) return { data: null, errors }
 
-  // Job title must exactly match one of the enum values
   const validTitle = VALID_JOB_TITLES.find(
-    (t) => t.toLowerCase() === jobTitleRaw!.toLowerCase()
+    (t) => t.toLowerCase() === jobTitleRaw.toLowerCase()
   )
   if (!validTitle) {
     errors.push({
       row: rowIndex,
       field: 'Job Title',
       value: jobTitleRaw,
-      message: `Unknown job title. Expected one of: ${VALID_JOB_TITLES.join(', ')}`,
+      message: `Unknown job title "${jobTitleRaw}". Expected one of: ${VALID_JOB_TITLES.join(', ')}`,
     })
     return { data: null, errors }
   }
 
-  const statusRaw = row[COLUMN_MAP.status]?.trim().toLowerCase()
-  const status = STATUS_MAP[statusRaw] ?? 'active'
-
-  const cargoIdRaw = row[COLUMN_MAP.cargoId]?.trim()
-  const cargoId = cargoIdRaw && !isNaN(Number(cargoIdRaw)) ? Number(cargoIdRaw) : undefined
-
-  const location = row[COLUMN_MAP.location]?.trim() || 'Mesa'
+  const status = STATUS_MAP[statusRaw?.toLowerCase()] ?? 'active'
 
   return {
     data: {
-      paylocityId: paylocityId!,
-      name: name!,
+      paylocityId,
+      name,
       jobTitle: validTitle,
-      location,
+      location: location || 'Mesa',
       status,
-      cargoId,
     },
     errors: [],
   }
