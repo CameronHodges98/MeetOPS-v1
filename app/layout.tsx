@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
+import { currentUser } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
 import { Inter } from 'next/font/google'
 import { Navbar } from '@/components/layout/Navbar'
 import { Providers } from '@/app/providers'
@@ -15,7 +17,18 @@ export const metadata: Metadata = {
   description: 'Operations management suite — staffing, UPH tracking, cycle time, and coaching',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const ALLOWED_DOMAIN = '@nellisauction.com'
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await currentUser()
+
+  if (user) {
+    const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
+    if (primary && !primary.emailAddress.endsWith(ALLOWED_DOMAIN)) {
+      redirect('/unauthorized')
+    }
+  }
+
   return (
     <ClerkProvider>
       <html lang="en" className={inter.variable}>
