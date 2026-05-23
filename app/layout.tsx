@@ -1,7 +1,5 @@
 import type { Metadata } from 'next'
 import { ClerkProvider } from '@clerk/nextjs'
-import { currentUser } from '@clerk/nextjs/server'
-import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { Inter } from 'next/font/google'
 import { Navbar } from '@/components/layout/Navbar'
@@ -19,8 +17,6 @@ export const metadata: Metadata = {
   description: 'Operations management suite — staffing, UPH tracking, cycle time, and coaching',
 }
 
-const ALLOWED_DOMAIN = '@nellisauction.com'
-
 // Routes that render full-screen with no navbar or page padding
 const FULLSCREEN_ROUTES = ['/sign-in', '/sign-up', '/unauthorized']
 
@@ -29,16 +25,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const pathname = headersList.get('x-pathname') ?? ''
 
   const isFullscreen = FULLSCREEN_ROUTES.some((r) => pathname.startsWith(r))
-
-  if (!isFullscreen) {
-    const user = await currentUser()
-    if (user) {
-      const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
-      if (primary && !primary.emailAddress.endsWith(ALLOWED_DOMAIN)) {
-        redirect('/unauthorized')
-      }
-    }
-  }
 
   return (
     <ClerkProvider>
