@@ -36,8 +36,13 @@ export function gapStatus(gap: number): 'green' | 'amber' | 'red' {
   return 'red'
 }
 
-// Compute recommended flexes from surplus depts to short depts.
-// Largest surplus donates first, largest shortage receives first.
+// Recommended flex moves follow the facility's specific labor flex rules.
+// These are suggestions only — the Operations Manager confirms or overrides all moves.
+//
+// Priority order:
+//   Picking short        → Processing fills first
+//   Customer Svc short   → Returns (max 3) → Material Handling → Picking (last resort)
+//   All other deficits   → no auto-recommendation; manager adds manually
 export interface RecommendedFlex {
   fromDepartment: string
   toDepartment: string
@@ -48,27 +53,33 @@ export function computeRecommendedFlexes(
   snapshots: DeptSnapshot[],
   neededByDept: Record<string, number>
 ): RecommendedFlex[] {
-  const gaps = snapshots.map((s) => ({
-    department: s.department,
-    gap: computeGap(computeEffectiveHeadcount(s), neededByDept[s.department] ?? 0),
-  }))
+  const gapMap = new Map<string, number>()
+  for (const snap of snapshots) {
+    const effective = computeEffectiveHeadcount(snap)
+    const needed = neededByDept[snap.department] ?? 0
+    gapMap.set(snap.department, effective - needed)
+  }
 
-  const surplus = gaps.filter((g) => g.gap > 0).sort((a, b) => b.gap - a.gap)
-  const short = gaps.filter((g) => g.gap < 0).sort((a, b) => a.gap - b.gap)
-
-  const remaining = surplus.map((s) => ({ ...s }))
   const flexes: RecommendedFlex[] = []
 
-  for (const need of short) {
-    let stillNeeded = Math.abs(need.gap)
-    for (const src of remaining) {
-      if (stillNeeded <= 0 || src.gap <= 0) continue
-      const moved = Math.min(src.gap, stillNeeded)
-      flexes.push({ fromDepartment: src.department, toDepartment: need.department, headcountMoved: moved })
-      src.gap -= moved
-      stillNeeded -= moved
-    }
+  function tryFlex(from: string, to: string, max?: number): void {
+    const surplus = gapMap.get(from) ?? 0
+    const deficit = -(gapMap.get(to) ?? 0)
+    if (surplus <= 0 || deficit <= 0) return
+    const moved = max !== undefined ? Math.min(surplus, deficit, max) : Math.min(surplus, deficit)
+    if (moved <= 0) return
+    flexes.push({ fromDepartment: from, toDepartment: to, headcountMoved: moved })
+    gapMap.set(from, surplus - moved)
+    gapMap.set(to, (gapMap.get(to) ?? 0) + moved)
   }
+
+  // Picking short → backfill from Processing
+  tryFlex('Processing', 'Picking')
+
+  // Customer Service short → Returns (cap 3) → Material Handling → Picking
+  tryFlex('Returns', 'Customer Service', 3)
+  tryFlex('Material Handling', 'Customer Service')
+  tryFlex('Picking', 'Customer Service')
 
   return flexes
 }
