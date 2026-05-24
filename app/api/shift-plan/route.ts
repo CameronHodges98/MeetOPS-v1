@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
-import { shiftPlans, shiftPlanSubmissions, employees } from '@/lib/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
-import { APP_CONFIG, DEPARTMENT_MAP, PRODUCTION_DEPARTMENTS } from '@/config/constants'
+import { shiftPlans, shiftPlanSubmissions, departmentRosters } from '@/lib/db/schema'
+import { eq, and } from 'drizzle-orm'
+import { APP_CONFIG, PRODUCTION_DEPARTMENTS } from '@/config/constants'
 
 // GET /api/shift-plan?date=YYYY-MM-DD
 // Returns the plan for a date, creating it if it doesn't exist yet.
@@ -35,20 +35,15 @@ export async function GET(request: Request) {
 
   if (!plan) return Response.json({ error: 'Failed to create plan' }, { status: 500 })
 
-  // Roster counts: active employees grouped by department
+  // Persistent roster counts per department (updated only on hires/terminations)
   const rosterRows = await db
-    .select({
-      jobTitle: employees.jobTitle,
-      count: sql<number>`cast(count(*) as int)`,
-    })
-    .from(employees)
-    .where(and(eq(employees.status, 'active'), eq(employees.location, location)))
-    .groupBy(employees.jobTitle)
+    .select()
+    .from(departmentRosters)
+    .where(eq(departmentRosters.location, location))
 
   const rosterByDept: Record<string, number> = {}
   for (const row of rosterRows) {
-    const dept = DEPARTMENT_MAP[row.jobTitle]
-    if (dept) rosterByDept[dept] = (rosterByDept[dept] ?? 0) + row.count
+    rosterByDept[row.department] = row.count
   }
 
   // Existing submissions for this plan
@@ -61,7 +56,6 @@ export async function GET(request: Request) {
     submissions.map((s) => [s.department, s])
   )
 
-  // Build the department summary
   const departments = PRODUCTION_DEPARTMENTS.map((dept) => ({
     department: dept,
     scheduledCount: rosterByDept[dept] ?? 0,

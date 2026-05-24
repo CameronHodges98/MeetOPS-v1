@@ -1,11 +1,11 @@
 'use client'
 
-import { X, Plus, Trash2, ArrowRight } from 'lucide-react'
+import { X, Plus, Trash2, ArrowRight, Clock } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
-import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS } from '@/config/constants'
+import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
-import type { DeptSnapshot, RecommendedFlex } from '../utils'
+import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
 import type { HistoricalRow, HistoricalHourRow } from '../queries'
 import { computeEffectiveHeadcount, computeGap, gapStatus, gapLabel } from '../utils'
 
@@ -28,6 +28,7 @@ interface QuarterDrawerProps {
   historicalHourlyRows: HistoricalHourRow[]
   confirmedFlexes: FlexPlanEntry[]
   recommendedFlexes: RecommendedFlex[]
+  vtoRecommendations: VtoRecommendation[]
   isPublished: boolean
   onAddFlex: (entry: { quarter: number; fromDepartment: string; toDepartment: string; headcountMoved: number }) => void
   onDeleteFlex: (id: number) => void
@@ -41,13 +42,16 @@ export function QuarterDrawer({
   historicalHourlyRows,
   confirmedFlexes,
   recommendedFlexes,
+  vtoRecommendations,
   isPublished,
   onAddFlex,
   onDeleteFlex,
   onClose,
 }: QuarterDrawerProps) {
   const quarter = SHIFT_QUARTERS.find((q) => q.quarter === quarterNum)!
-  const qHistorical = historicalRows.filter((r) => r.quarter === quarterNum)
+  // Processing and Returns excluded — shown as capacity estimates, not historical actions
+  const CAPACITY_EST_DEPTS = new Set(['Processing', 'Returns'])
+  const qHistorical = historicalRows.filter((r) => r.quarter === quarterNum && !CAPACITY_EST_DEPTS.has(r.department))
   const qFlexes = confirmedFlexes.filter((f) => f.quarter === quarterNum)
 
   const [addingFlex, setAddingFlex] = useState(false)
@@ -62,14 +66,47 @@ export function QuarterDrawer({
     setNewFrom(''); setNewTo(''); setNewCount(''); setAddingFlex(false)
   }
 
+  // Flex-adjusted effective headcount helpers
+  const flexInFor  = (dept: string) => qFlexes.filter((f) => f.toDepartment   === dept).reduce((s, f) => s + f.headcountMoved, 0)
+  const flexOutFor = (dept: string) => qFlexes.filter((f) => f.fromDepartment === dept).reduce((s, f) => s + f.headcountMoved, 0)
+
+  // Processing effective after flex moves out — drives Put Away and MH needed
+  const processingSnap    = snapshots.find((s) => s.department === 'Processing')
+  const processingBaseEff = processingSnap ? computeEffectiveHeadcount(processingSnap) : 0
+  const processingAdjEff  = processingBaseEff + flexInFor('Processing') - flexOutFor('Processing')
+
   // Per-dept rows for the summary table
   const deptRows = snapshots.map((snap) => {
-    const hist = qHistorical.find((r) => r.department === snap.department)
-    const effective = computeEffectiveHeadcount(snap)
-    const needed = hist ? Number(hist.avg_headcount_needed) : 0
+    const hist         = qHistorical.find((r) => r.department === snap.department)
+    const baseEff      = computeEffectiveHeadcount(snap)
+    const effective    = baseEff + flexInFor(snap.department) - flexOutFor(snap.department)
+    const isProcessing = snap.department === 'Processing'
+    const isReturns    = snap.department === 'Returns'
+    const isCapacityEst = isProcessing || isReturns
+
+    // Needed is derived for Processing-linked depts; raw historical for everything else
+    let needed = 0
+    if (snap.department === 'Put Away') {
+      needed = Math.ceil((processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
+    } else if (snap.department === 'Material Handling') {
+      needed = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
+    } else if (!isCapacityEst) {
+      needed = hist ? Number(hist.avg_headcount_needed) : 0
+    }
+
     const gap = computeGap(effective, needed)
-    const actions = hist ? Number(hist.avg_total_actions) : 0
-    return { dept: snap.department, effective, needed, gap, actions, status: gapStatus(gap) }
+
+    // Capacity-estimate depts show throughput based on flex-adjusted headcount
+    let actions = 0
+    if (isProcessing) {
+      actions = Math.round(effective * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR)
+    } else if (isReturns) {
+      actions = Math.round(effective * SHIFT_CONFIG.RETURNS_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR)
+    } else {
+      actions = hist ? Number(hist.avg_total_actions) : 0
+    }
+
+    return { dept: snap.department, effective, needed, gap, actions, isCapacityEst, status: gapStatus(gap) }
   })
 
   return (
@@ -112,7 +149,7 @@ export function QuarterDrawer({
                     <th className="px-3 py-2 text-right font-medium">Assigned</th>
                     <th className="px-3 py-2 text-right font-medium">Needed</th>
                     <th className="px-3 py-2 text-right font-medium">Gap</th>
-                    <th className="px-3 py-2 text-right font-medium">Pred. Actions</th>
+                    <th className="px-3 py-2 text-right font-medium">Pred. Output</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -127,7 +164,11 @@ export function QuarterDrawer({
                         {r.needed > 0 ? gapLabel(r.gap) : '—'}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                        {r.actions > 0 ? r.actions.toLocaleString() : '—'}
+                        {r.actions > 0
+                          ? r.isCapacityEst
+                            ? <span title="Estimated capacity based on headcount × UPH">~{r.actions.toLocaleString()} <span className="text-xs opacity-60">cap.</span></span>
+                            : r.actions.toLocaleString()
+                          : '—'}
                       </td>
                     </tr>
                   ))}
@@ -144,18 +185,33 @@ export function QuarterDrawer({
             <div className="space-y-1.5">
               {quarter.hours.map((h) => {
                 const label = HOUR_LABELS[h]
-                // Use real per-hour averages from the hourly endpoint
+                // Real per-hour averages from the hourly endpoint.
+                // Processing and Returns are excluded — shown as capacity estimates instead.
                 const hourRows = historicalHourlyRows
-                  .filter((r) => r.hour === h)
+                  .filter((r) => r.hour === h && !CAPACITY_EST_DEPTS.has(r.department))
                   .map((r) => ({
                     dept: r.department,
                     actions: Number(r.avg_total_actions),
                     needed: Number(r.avg_headcount_needed),
+                    isCapacityEst: false,
                   }))
                   .filter((r) => r.actions > 0)
 
-                const totalHourActions = hourRows.reduce((s, r) => s + r.actions, 0)
-                const totalHourNeeded  = hourRows.reduce((s, r) => s + r.needed, 0)
+                // Add capacity estimates for Processing and Returns
+                const processingEff2 = processingSnap ? computeEffectiveHeadcount(processingSnap) : 0
+                const processingHourCap = Math.round(processingEff2 * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH * SHIFT_CONFIG.UTILIZATION_FACTOR)
+                if (processingHourCap > 0) {
+                  hourRows.push({ dept: 'Processing', actions: processingHourCap, needed: 0, isCapacityEst: true })
+                }
+                const returnsSnap2 = snapshots.find((s) => s.department === 'Returns')
+                const returnsEff = returnsSnap2 ? computeEffectiveHeadcount(returnsSnap2) : 0
+                const returnsHourCap = Math.round(returnsEff * SHIFT_CONFIG.RETURNS_DEFAULT_UPH * SHIFT_CONFIG.UTILIZATION_FACTOR)
+                if (returnsHourCap > 0) {
+                  hourRows.push({ dept: 'Returns', actions: returnsHourCap, needed: 0, isCapacityEst: true })
+                }
+
+                const totalHourActions = hourRows.filter((r) => !r.isCapacityEst).reduce((s, r) => s + r.actions, 0)
+                const totalHourNeeded  = hourRows.filter((r) => !r.isCapacityEst).reduce((s, r) => s + r.needed, 0)
 
                 return (
                   <div key={h} className="rounded-lg border border-border px-3 py-2">
@@ -171,7 +227,11 @@ export function QuarterDrawer({
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                         {hourRows.map((r) => (
                           <span key={r.dept} className="text-xs text-muted-foreground">
-                            {r.dept}: <span className="text-foreground font-medium">{r.actions.toLocaleString()}</span>
+                            {r.dept}:{' '}
+                            <span className="text-foreground font-medium">
+                              {r.isCapacityEst ? `~${r.actions.toLocaleString()}` : r.actions.toLocaleString()}
+                            </span>
+                            {r.isCapacityEst && <span className="opacity-60"> cap.</span>}
                           </span>
                         ))}
                       </div>
@@ -181,6 +241,34 @@ export function QuarterDrawer({
               })}
             </div>
           </section>
+
+          {/* ── VTO recommendations (Q4 only) ── */}
+          {vtoRecommendations.length > 0 && (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                VTO Eligible
+              </h3>
+              <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3 space-y-1.5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+                    Surplus headcount — consider offering VTO
+                  </p>
+                </div>
+                {vtoRecommendations.map((r) => (
+                  <div key={r.department} className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-400">
+                    <span>{r.department}</span>
+                    <span className="font-semibold tabular-nums">
+                      {r.headcountEligible} eligible
+                    </span>
+                  </div>
+                ))}
+                <p className="text-xs text-blue-600/70 dark:text-blue-500 pt-1">
+                  Manager discretion — offer VTO to willing associates.
+                </p>
+              </div>
+            </section>
+          )}
 
           {/* ── Flex plan ── */}
           <section>

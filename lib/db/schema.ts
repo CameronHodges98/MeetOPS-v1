@@ -683,12 +683,36 @@ export type Appointment = typeof appointments.$inferSelect
 export type NewAppointment = typeof appointments.$inferInsert
 export type ProcessingThroughput = typeof processingThroughput.$inferSelect
 export type NewProcessingThroughput = typeof processingThroughput.$inferInsert
+// ============================================================
+// DEPARTMENT ROSTERS
+// Persistent scheduled headcount per department per location.
+// Updated only on new hires or terminations — not tied to any
+// individual shift plan. One row per department+location pair.
+// ============================================================
+
+export const departmentRosters = pgTable(
+  'department_rosters',
+  {
+    id: serial('id').primaryKey(),
+    department: varchar('department', { length: 100 }).notNull(),
+    location: varchar('location', { length: 100 }).notNull(),
+    count: integer('count').notNull().default(0),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    updatedByClerkId: varchar('updated_by_clerk_id', { length: 100 }),
+  },
+  (table) => ({
+    deptLocationIdx: uniqueIndex('department_rosters_dept_location_idx').on(table.department, table.location),
+  })
+)
+
 export type ShiftPlan = typeof shiftPlans.$inferSelect
 export type NewShiftPlan = typeof shiftPlans.$inferInsert
 export type ShiftPlanSubmission = typeof shiftPlanSubmissions.$inferSelect
 export type NewShiftPlanSubmission = typeof shiftPlanSubmissions.$inferInsert
 export type FlexPlanEntry = typeof flexPlanEntries.$inferSelect
 export type NewFlexPlanEntry = typeof flexPlanEntries.$inferInsert
+export type DepartmentRoster = typeof departmentRosters.$inferSelect
+export type NewDepartmentRoster = typeof departmentRosters.$inferInsert
 export type Warehouse = typeof warehouses.$inferSelect
 export type NewWarehouse = typeof warehouses.$inferInsert
 export type UserPreference = typeof userPreferences.$inferSelect

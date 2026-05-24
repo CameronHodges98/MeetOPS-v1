@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { HelpButton, HelpModal } from '@/components/shared/HelpModal'
 import type { HelpSection } from '@/components/shared/HelpModal'
-import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS } from '@/config/constants'
+import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG } from '@/config/constants'
+import { format, subDays } from 'date-fns'
 import { useShiftPlanStore } from '@/features/shift-plan/store'
 import {
   useShiftPlan,
@@ -16,6 +17,8 @@ import {
   useSubmitDept,
   useResetSubmission,
   usePublishPlan,
+  useUnpublishPlan,
+  useUpdateDeptRoster,
 } from '@/features/shift-plan/queries'
 import { computeEffectiveHeadcount, computeRecommendedFlexes, computeVtoRecommendations } from '@/features/shift-plan/utils'
 import { QuarterCard } from '@/features/shift-plan/components/QuarterCard'
@@ -74,6 +77,21 @@ const HELP_SECTIONS: HelpSection[] = [
   },
 ]
 
+// Build last 14 days as dropdown options (today first)
+function buildDateOptions() {
+  const today = new Date()
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = subDays(today, i)
+    const value = format(d, 'yyyy-MM-dd')
+    const label = i === 0 ? `Today — ${format(d, 'EEE, MMM d')}`
+      : i === 1 ? `Yesterday — ${format(d, 'EEE, MMM d')}`
+      : format(d, 'EEE, MMM d')
+    return { value, label }
+  })
+}
+
+const DATE_OPTIONS = buildDateOptions()
+
 export default function ShiftPlanPage() {
   const { selectedDate, setSelectedDate, selectedQuarter, setSelectedQuarter } = useShiftPlanStore()
   const [helpOpen, setHelpOpen] = useState(false)
@@ -84,21 +102,38 @@ export default function ShiftPlanPage() {
   const planId = planData?.plan?.id
   const { data: flexEntries = [] } = useFlexEntries(planId)
 
-  const submitDept   = useSubmitDept(selectedDate)
-  const resetDept    = useResetSubmission(selectedDate)
-  const addFlex      = useAddFlexEntry(planId)
-  const deleteFlex   = useDeleteFlexEntry(planId)
-  const publishPlan  = usePublishPlan(selectedDate)
+  const submitDept    = useSubmitDept(selectedDate)
+  const resetDept     = useResetSubmission(selectedDate)
+  const updateRoster  = useUpdateDeptRoster(selectedDate)
+  const addFlex       = useAddFlexEntry(planId)
+  const deleteFlex    = useDeleteFlexEntry(planId)
+  const publishPlan   = usePublishPlan(selectedDate)
+  const unpublishPlan = useUnpublishPlan(selectedDate)
 
   const snapshots    = planData?.departments ?? []
   const isPublished  = !!planData?.plan?.publishedAt
   const submittedCount = snapshots.filter((s) => !!s.submission?.submittedAt).length
 
-  // Build needed-by-dept map from historical for a given quarter
+  // Build needed-by-dept map from historical for a given quarter.
+  // Processing has no "needed" target — it's a flex source with no surplus/deficit concept.
+  // Put Away and Material Handling are both derived from Processing effective headcount.
   function neededByDept(quarterNum: number): Record<string, number> {
     const map: Record<string, number> = {}
     for (const row of historical) {
-      if (row.quarter === quarterNum) map[row.department] = Number(row.avg_headcount_needed)
+      // Processing is intentionally excluded — no headcount target applies
+      if (row.quarter === quarterNum && row.department !== 'Processing') {
+        map[row.department] = Number(row.avg_headcount_needed)
+      }
+    }
+    const processingSnap = snapshots.find((s) => s.department === 'Processing')
+    if (processingSnap) {
+      const processingEff = computeEffectiveHeadcount(processingSnap)
+      // Put Away must keep pace with Processing output; hours × utilization cancel
+      map['Put Away'] = Math.ceil(
+        (processingEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH
+      )
+      // 1 Material Handler required per MH_PROCESSORS_RATIO Processors on the line
+      map['Material Handling'] = Math.ceil(processingEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
     }
     return map
   }
@@ -127,12 +162,15 @@ export default function ShiftPlanPage() {
         actions={
           <div className="flex items-center gap-3">
             <HelpButton onClick={() => setHelpOpen(true)} />
-            <input
-              type="date"
+            <select
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               className="rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-            />
+            >
+              {DATE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
             {!isPublished && planId && (
               <button
                 onClick={() => publishPlan.mutate(planId)}
@@ -142,10 +180,19 @@ export default function ShiftPlanPage() {
                 {publishPlan.isPending ? 'Publishing…' : 'Publish Plan'}
               </button>
             )}
-            {isPublished && (
-              <span className="rounded-md bg-green-100 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-                Plan Published
-              </span>
+            {isPublished && planId && (
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-green-100 dark:bg-green-950/40 border border-green-200 dark:border-green-800 px-3 py-1.5 text-sm font-medium text-green-700 dark:text-green-400">
+                  Plan Published
+                </span>
+                <button
+                  onClick={() => unpublishPlan.mutate(planId)}
+                  disabled={unpublishPlan.isPending}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 transition-colors"
+                >
+                  {unpublishPlan.isPending ? 'Unlocking…' : 'Edit Plan'}
+                </button>
+              </div>
             )}
           </div>
         }
@@ -201,6 +248,7 @@ export default function ShiftPlanPage() {
                       isPublished={isPublished}
                       onSubmit={(data) => submitDept.mutate(data)}
                       onReset={(data) => resetDept.mutate(data)}
+                      onUpdateRoster={(data) => updateRoster.mutate(data)}
                     />
                   ))}
               </div>

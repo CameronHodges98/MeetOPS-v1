@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm'
 export interface ExemptEntry {
   count: number
   reason: string
+  exempt?: boolean  // true = indirect role (auditor, trainer, restricted duty) — subtracts from effective headcount
 }
 
 // GET /api/shift-plan/submissions?planId=123

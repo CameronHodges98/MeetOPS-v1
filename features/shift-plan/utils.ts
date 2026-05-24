@@ -7,19 +7,25 @@ export interface DeptSnapshot {
   submission: ShiftPlanSubmission | null
 }
 
+// Total of all designated entries (producing + indirect)
 export function getExemptTotal(entries: ExemptEntry[]): number {
   return entries.reduce((sum, e) => sum + (e.count ?? 0), 0)
 }
 
-// Production effective = scheduled − callouts + OT − designated
-// "Designated" associates are physically present but performing a non-production
-// function (auditor, trainer, restricted duty). They do not count toward filling
-// the dept's production headcount need, and cannot be recommended for flex.
+// Total of only exempt=true entries (indirect roles that don't complete dept actions)
+export function getExemptOnlyTotal(entries: ExemptEntry[]): number {
+  return entries.filter((e) => e.exempt).reduce((sum, e) => sum + (e.count ?? 0), 0)
+}
+
+// Production effective = scheduled − callouts + OT − indirect
+// "Indirect" (exempt=true) associates are present but performing a non-production
+// function. They do not count toward the dept's production capacity and cannot flex.
+// Designated associates without exempt=true ARE producing and count toward capacity.
 export function computeEffectiveHeadcount(snap: DeptSnapshot): number {
   const { scheduledCount, submission } = snap
   if (!submission) return scheduledCount
-  const designated = getExemptTotal((submission.exemptEntries as ExemptEntry[]) ?? [])
-  return Math.max(0, scheduledCount - submission.calloutCount - designated + submission.otCount)
+  const indirect = getExemptOnlyTotal((submission.exemptEntries as ExemptEntry[]) ?? [])
+  return Math.max(0, scheduledCount - submission.calloutCount - indirect + submission.otCount)
 }
 
 // Total bodies on-site (including designated non-production roles).
@@ -108,6 +114,9 @@ export interface VtoRecommendation {
   headcountEligible: number
 }
 
+// Processing, Returns, and MH are flex sources — surplus headcount is never offered as VTO.
+const VTO_EXCLUDED_DEPTS = new Set(['Processing', 'Returns', 'Material Handling'])
+
 export function computeVtoRecommendations(
   snapshots: DeptSnapshot[],
   neededByDept: Record<string, number>,
@@ -116,6 +125,7 @@ export function computeVtoRecommendations(
   if (quarterNum !== 4) return []
 
   return snapshots
+    .filter((snap) => !VTO_EXCLUDED_DEPTS.has(snap.department))
     .map((snap) => ({
       department: snap.department,
       headcountEligible: computeGap(computeEffectiveHeadcount(snap), neededByDept[snap.department] ?? 0),

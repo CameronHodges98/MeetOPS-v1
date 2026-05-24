@@ -75,6 +75,22 @@ export const SHIFT_CONFIG = {
   // Workers operate at ~85% of theoretical max throughput due to walk time,
   // indirect tasks, breaks, etc. Headcount = actions / (UPH × hours × UTILIZATION_FACTOR).
   UTILIZATION_FACTOR: 0.85,
+
+  // Default UPH for Processing (RC SORTABLE is ~97% of volume at 65 UPH).
+  PROCESSING_DEFAULT_UPH: 65,
+
+  // Default UPH for Returns clerks.
+  RETURNS_DEFAULT_UPH: 40,
+
+  // Default UPH for Put Away (Item Putaway action).
+  // Put Away needed headcount = ceil(Processing output / Put Away UPH).
+  // Both UPH values have the same hours × utilization factor so they cancel,
+  // leaving: ceil(processingEff × PROCESSING_DEFAULT_UPH / PUTAWAY_DEFAULT_UPH).
+  PUTAWAY_DEFAULT_UPH: 65,
+
+  // 1 Material Handler is needed for every N Processors on the line.
+  // MH needed = ceil(processingEffective / MH_PROCESSORS_RATIO).
+  MH_PROCESSORS_RATIO: 4,
 } as const
 
 // ============================================================

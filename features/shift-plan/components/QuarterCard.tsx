@@ -1,10 +1,11 @@
 'use client'
 
-import { ArrowRight, Users, Zap, TrendingUp, ChevronRight } from 'lucide-react'
+import { ArrowRight, Users, Zap, TrendingUp, ChevronRight, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { SHIFT_CONFIG } from '@/config/constants'
 import type { SHIFT_QUARTERS } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
-import type { DeptSnapshot, RecommendedFlex } from '../utils'
+import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
 import type { HistoricalRow } from '../queries'
 import { computeEffectiveHeadcount, computeGap, gapStatus } from '../utils'
 
@@ -16,6 +17,7 @@ interface QuarterCardProps {
   historicalRows: HistoricalRow[]
   confirmedFlexes: FlexPlanEntry[]
   recommendedFlexes: RecommendedFlex[]
+  vtoRecommendations: VtoRecommendation[]
   submittedCount: number
   totalDepts: number
   isPublished: boolean
@@ -34,12 +36,15 @@ export function QuarterCard({
   historicalRows,
   confirmedFlexes,
   recommendedFlexes,
+  vtoRecommendations,
   submittedCount,
   totalDepts,
   isPublished,
   onClick,
 }: QuarterCardProps) {
-  const qHistorical = historicalRows.filter((r) => r.quarter === quarter.quarter)
+  // Processing and Returns excluded — shown as capacity estimates, not historical actions
+  const CAPACITY_EST_DEPTS = new Set(['Processing', 'Returns'])
+  const qHistorical = historicalRows.filter((r) => r.quarter === quarter.quarter && !CAPACITY_EST_DEPTS.has(r.department))
 
   // Per-dept summary
   const deptRows = snapshots.map((snap) => {
@@ -63,6 +68,18 @@ export function QuarterCard({
   const dataPoints    = qHistorical.length > 0
     ? Math.min(...qHistorical.map((r) => Number(r.data_points)))
     : 0
+
+  // Capacity estimates for depts not tracked via historical actions
+  const processingSnap = snapshots.find((s) => s.department === 'Processing')
+  const processingEffective = processingSnap ? computeEffectiveHeadcount(processingSnap) : 0
+  const processingCapacity = Math.round(
+    processingEffective * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR
+  )
+  const returnsSnap = snapshots.find((s) => s.department === 'Returns')
+  const returnsEffective = returnsSnap ? computeEffectiveHeadcount(returnsSnap) : 0
+  const returnsCapacity = Math.round(
+    returnsEffective * SHIFT_CONFIG.RETURNS_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR
+  )
 
   const qFlexes = confirmedFlexes.filter((f) => f.quarter === quarter.quarter)
   const qRecs   = recommendedFlexes
@@ -161,7 +178,7 @@ export function QuarterCard({
                 <span className="ml-1 text-green-600 dark:text-green-400">(6 weeks)</span>
               )}
             </p>
-            {totalActions === 0 ? (
+            {totalActions === 0 && processingCapacity === 0 && returnsCapacity === 0 ? (
               <p className="text-xs text-muted-foreground italic">No historical data yet</p>
             ) : (
               <div className="flex flex-wrap gap-x-3 gap-y-0.5">
@@ -173,34 +190,46 @@ export function QuarterCard({
                     <span className="text-muted-foreground"> {r.department}</span>
                   </span>
                 ))}
+                {processingCapacity > 0 && (
+                  <span className="text-xs">
+                    <span className="font-medium text-foreground">~{processingCapacity.toLocaleString()}</span>
+                    <span className="text-muted-foreground"> Processing</span>
+                    <span className="text-muted-foreground/60"> est.</span>
+                  </span>
+                )}
+                {returnsCapacity > 0 && (
+                  <span className="text-xs">
+                    <span className="font-medium text-foreground">~{returnsCapacity.toLocaleString()}</span>
+                    <span className="text-muted-foreground"> Returns</span>
+                    <span className="text-muted-foreground/60"> est.</span>
+                  </span>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        {/* 4 — VTO eligibility (Q4 only) */}
+        {vtoRecommendations.length > 0 && (
+          <div className="flex items-start gap-2.5">
+            <Clock className="h-4 w-4 text-blue-500 dark:text-blue-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground mb-1">
+                VTO eligible
+                <span className="ml-1 text-blue-500 dark:text-blue-400">(surplus)</span>
+              </p>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                {vtoRecommendations.map((r) => (
+                  <span key={r.department} className="text-xs text-blue-600 dark:text-blue-400">
+                    {r.department}: <span className="font-medium">{r.headcountEligible}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Bottom gap bar */}
-      {totalNeeded > 0 && (
-        <div className="mt-4 pt-3 border-t border-border">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-muted-foreground">Facility coverage</span>
-            <span className={cn(
-              'font-semibold',
-              overallStatus === 'green' ? 'text-green-600 dark:text-green-400' :
-              overallStatus === 'amber' ? 'text-amber-600 dark:text-amber-400' :
-              'text-red-600 dark:text-red-400'
-            )}>
-              {totalAssigned}/{totalNeeded}
-            </span>
-          </div>
-          <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn('h-full rounded-full transition-all', STATUS_COLORS[overallStatus])}
-              style={{ width: `${Math.min(100, (totalAssigned / totalNeeded) * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
     </button>
   )
 }

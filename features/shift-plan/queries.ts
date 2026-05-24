@@ -127,6 +127,23 @@ export function useSubmitDept(date: string) {
   })
 }
 
+export function useUpdateDeptRoster(date: string) {
+  const location = useWarehouseStore((s) => s.activeWarehouse?.name ?? 'Mesa')
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: { department: string; count: number }) => {
+      const res = await fetch('/api/shift-plan/roster', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, location }),
+      })
+      if (!res.ok) throw new Error('Failed to update roster')
+      return res.json()
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-plan', date] }),
+  })
+}
+
 // ── Historical demand ─────────────────────────────────────────
 
 export function useHistoricalDemand(date: string) {
@@ -155,7 +172,7 @@ export function useHistoricalHourly(date: string) {
   })
 }
 
-// ── Publish ───────────────────────────────────────────────────
+// ── Publish / Unpublish ───────────────────────────────────────
 
 export function usePublishPlan(date: string) {
   const qc = useQueryClient()
@@ -167,6 +184,22 @@ export function usePublishPlan(date: string) {
         body: JSON.stringify({ planId }),
       })
       if (!res.ok) throw new Error('Failed to publish plan')
+      return res.json() as Promise<ShiftPlan>
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-plan', date] }),
+  })
+}
+
+export function useUnpublishPlan(date: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (planId: number) => {
+      const res = await fetch('/api/shift-plan/unpublish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId }),
+      })
+      if (!res.ok) throw new Error('Failed to unlock plan')
       return res.json() as Promise<ShiftPlan>
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-plan', date] }),
