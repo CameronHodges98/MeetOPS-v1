@@ -7,7 +7,7 @@ import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG, DEPT_DEFAULT_UPH 
 import type { FlexPlanEntry } from '@/lib/db/schema'
 import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
 import type { HistoricalRow, HistoricalHourRow } from '../queries'
-import { computeEffectiveHeadcount, computeGap, gapStatus, gapLabel } from '../utils'
+import { computeQuarterEffective, computeHourEffective, computeGap, gapStatus, gapLabel, isHourPartial } from '../utils'
 
 const HOUR_LABELS: Record<number, string> = {
   5: '5 AM', 6: '6 AM', 7: '7 AM', 8: '8 AM', 9: '9 AM', 10: '10 AM',
@@ -72,13 +72,13 @@ export function QuarterDrawer({
 
   // Processing effective after flex moves out — drives Put Away and MH needed
   const processingSnap    = snapshots.find((s) => s.department === 'Processing')
-  const processingBaseEff = processingSnap ? computeEffectiveHeadcount(processingSnap) : 0
+  const processingBaseEff = processingSnap ? computeQuarterEffective(processingSnap, quarter.hours) : 0
   const processingAdjEff  = processingBaseEff + flexInFor('Processing') - flexOutFor('Processing')
 
   // Per-dept rows for the summary table
   const deptRows = snapshots.map((snap) => {
     const hist         = qHistorical.find((r) => r.department === snap.department)
-    const baseEff      = computeEffectiveHeadcount(snap)
+    const baseEff      = computeQuarterEffective(snap, quarter.hours)
     const effective    = baseEff + flexInFor(snap.department) - flexOutFor(snap.department)
     const isProcessing = snap.department === 'Processing'
     const isReturns    = snap.department === 'Returns'
@@ -195,13 +195,14 @@ export function QuarterDrawer({
                   .filter((s) => DEPT_DEFAULT_UPH[s.department] != null)
                   .map((s) => {
                     const uph = DEPT_DEFAULT_UPH[s.department]
-                    const eff = computeEffectiveHeadcount(s)
+                    const eff = computeHourEffective(s, h)
                     const cap = Math.round(eff * uph * SHIFT_CONFIG.UTILIZATION_FACTOR)
+                    const partial = s.shiftSchedule && s.shiftSchedule.length > 0 ? isHourPartial(s.shiftSchedule, h) : false
                     const histRow = historicalHourlyRows.find(
                       (r) => r.hour === h && r.department === s.department
                     )
                     const hist = histRow ? Number(histRow.avg_total_actions) : 0
-                    return { dept: s.department, cap, hist }
+                    return { dept: s.department, cap, hist, partial }
                   })
                   .filter((r) => r.cap > 0 || r.hist > 0)
 
@@ -224,6 +225,7 @@ export function QuarterDrawer({
                           <span key={r.dept} className="text-xs text-muted-foreground">
                             {r.dept}:{' '}
                             <span className="text-foreground font-medium">~{r.cap.toLocaleString()}</span>
+                            {r.partial && <span className="text-amber-500 dark:text-amber-400"> (partial)</span>}
                             {r.hist > 0 && <span className="opacity-60">/{r.hist.toLocaleString()}</span>}
                           </span>
                         ))}

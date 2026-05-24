@@ -11,9 +11,10 @@ export async function PUT(request: Request) {
   const { userId } = await auth()
   if (!userId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json() as { department: string; count: number; location?: string }
+  const body = await request.json() as { department: string; count: number; location?: string; shiftSchedule?: unknown }
   const { department, count } = body
   const location = body.location ?? APP_CONFIG.DEFAULT_LOCATION
+  const shiftSchedule = body.shiftSchedule ?? null
 
   if (!department || count == null) {
     return Response.json({ error: 'department and count required' }, { status: 400 })
@@ -21,10 +22,10 @@ export async function PUT(request: Request) {
 
   const [row] = await db
     .insert(departmentRosters)
-    .values({ department, location, count, updatedByClerkId: userId })
+    .values({ department, location, count, shiftSchedule, updatedByClerkId: userId })
     .onConflictDoUpdate({
       target: [departmentRosters.department, departmentRosters.location],
-      set: { count, updatedAt: new Date(), updatedByClerkId: userId },
+      set: { count, shiftSchedule, updatedAt: new Date(), updatedByClerkId: userId },
     })
     .returning()
 

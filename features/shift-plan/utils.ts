@@ -1,9 +1,17 @@
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
 import type { ShiftPlanSubmission } from '@/lib/db/schema'
+import { SHIFT_CONFIG } from '@/config/constants'
+
+export interface ShiftEntry {
+  startTime: string  // "HH:MM" 24h format
+  endTime: string    // "HH:MM" 24h format
+  count: number
+}
 
 export interface DeptSnapshot {
   department: string
   scheduledCount: number
+  shiftSchedule: ShiftEntry[] | null
   submission: ShiftPlanSubmission | null
 }
 
@@ -104,6 +112,72 @@ export function computeRecommendedFlexes(
   tryFlex('Picking', 'Put Away')
 
   return flexes
+}
+
+// ── Shift schedule proration ──────────────────────────────────
+
+// Fraction of a given calendar hour (0–1) covered by a shift entry.
+// e.g. a shift 5:30–14:00 covers hour 5 at 0.5, hour 6 at 1.0, hour 14 at 0.
+export function getShiftFractionForHour(entry: ShiftEntry, hour: number): number {
+  const [sH, sM] = entry.startTime.split(':').map(Number)
+  const [eH, eM] = entry.endTime.split(':').map(Number)
+  const startFrac = sH + sM / 60
+  const endFrac = eH + eM / 60
+  const overlap = Math.min(endFrac, hour + 1) - Math.max(startFrac, hour)
+  return Math.max(0, Math.min(1, overlap))
+}
+
+// Sum of prorated scheduled headcount across all shift entries for one hour.
+export function scheduledCountForHour(schedule: ShiftEntry[], hour: number): number {
+  return schedule.reduce((sum, e) => sum + e.count * getShiftFractionForHour(e, hour), 0)
+}
+
+// Whether any shift entry has partial coverage of this hour (starts or ends mid-hour).
+export function isHourPartial(schedule: ShiftEntry[], hour: number): boolean {
+  return schedule.some((e) => {
+    const frac = getShiftFractionForHour(e, hour)
+    return frac > 0 && frac < 1
+  })
+}
+
+// Schedule-aware quarter effective: averages prorated scheduled headcount across
+// quarter hours, then scales by the overall callout ratio derived from submission data.
+// Falls back to computeEffectiveHeadcount when no schedule is defined.
+export function computeQuarterEffective(snap: DeptSnapshot, quarterHours: readonly number[]): number {
+  const schedule = snap.shiftSchedule
+  if (!schedule || schedule.length === 0) return computeEffectiveHeadcount(snap)
+  const totalScheduled = snap.scheduledCount
+  if (totalScheduled === 0) return 0
+  const calloutRatio = computeEffectiveHeadcount(snap) / totalScheduled
+  const avgProrated = quarterHours.reduce((s, h) => s + scheduledCountForHour(schedule, h), 0) / quarterHours.length
+  return Math.max(0, Math.round(avgProrated * calloutRatio))
+}
+
+// Schedule-aware single-hour effective (used for per-hour capacity rows in QuarterDrawer).
+// Returns a float so the caller can round after multiplying by UPH.
+export function computeHourEffective(snap: DeptSnapshot, hour: number): number {
+  const schedule = snap.shiftSchedule
+  if (!schedule || schedule.length === 0) return computeEffectiveHeadcount(snap)
+  const totalScheduled = snap.scheduledCount
+  if (totalScheduled === 0) return 0
+  const calloutRatio = computeEffectiveHeadcount(snap) / totalScheduled
+  return Math.max(0, scheduledCountForHour(schedule, hour) * calloutRatio)
+}
+
+// Schedule-aware quarter capacity estimate.
+// Sums per-hour (prorated workers × UPH × utilization) across the quarter.
+export function computeQuarterCapacity(snap: DeptSnapshot, quarterHours: readonly number[], uph: number): number {
+  const schedule = snap.shiftSchedule
+  if (!schedule || schedule.length === 0) {
+    return Math.round(computeEffectiveHeadcount(snap) * uph * quarterHours.length * SHIFT_CONFIG.UTILIZATION_FACTOR)
+  }
+  const totalScheduled = snap.scheduledCount
+  if (totalScheduled === 0) return 0
+  const calloutRatio = computeEffectiveHeadcount(snap) / totalScheduled
+  const total = quarterHours.reduce((sum, h) => {
+    return sum + scheduledCountForHour(schedule, h) * calloutRatio * uph * SHIFT_CONFIG.UTILIZATION_FACTOR
+  }, 0)
+  return Math.round(total)
 }
 
 // VTO recommendations are only generated for Q4.

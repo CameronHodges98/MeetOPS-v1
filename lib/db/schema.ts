@@ -697,6 +697,7 @@ export const departmentRosters = pgTable(
     department: varchar('department', { length: 100 }).notNull(),
     location: varchar('location', { length: 100 }).notNull(),
     count: integer('count').notNull().default(0),
+    shiftSchedule: jsonb('shift_schedule'),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     updatedByClerkId: varchar('updated_by_clerk_id', { length: 100 }),
   },
