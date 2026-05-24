@@ -11,6 +11,7 @@ import {
   useAddFlexEntry,
   useDeleteFlexEntry,
   useSubmitDept,
+  useResetSubmission,
   usePublishPlan,
 } from '@/features/shift-plan/queries'
 import { computeEffectiveHeadcount, computeRecommendedFlexes } from '@/features/shift-plan/utils'
@@ -29,6 +30,7 @@ export default function ShiftPlanPage() {
   const { data: flexEntries = [] } = useFlexEntries(planId)
 
   const submitDept   = useSubmitDept(selectedDate)
+  const resetDept    = useResetSubmission(selectedDate)
   const addFlex      = useAddFlexEntry(planId)
   const deleteFlex   = useDeleteFlexEntry(planId)
   const publishPlan  = usePublishPlan(selectedDate)
@@ -133,6 +135,7 @@ export default function ShiftPlanPage() {
                       planId={planId!}
                       isPublished={isPublished}
                       onSubmit={(data) => submitDept.mutate(data)}
+                      onReset={(data) => resetDept.mutate(data)}
                     />
                   ))}
               </div>

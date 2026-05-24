@@ -2,12 +2,14 @@
 
 import { useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Upload, X, ChevronDown, Users, BarChart2, ClipboardList, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { Upload, X, ChevronDown, Users, BarChart2, ClipboardList, Activity, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import Papa from 'papaparse'
 import { cn } from '@/lib/utils/cn'
+import type { UphScaleRow } from '@/app/api/ingest/uph-scale/route'
+import type { ActionTotalRow } from '@/app/api/ingest/action-totals/route'
 import type { IngestEmployeeRow, IngestActionRow } from '@/app/api/ingest/action-logs/route'
 
-type FileType = 'roster' | 'uph_scale' | 'action_logs'
+type FileType = 'roster' | 'uph_scale' | 'action_logs' | 'action_totals'
 
 const BATCH_SIZE = 500
 
@@ -33,16 +35,25 @@ const FILE_OPTIONS: {
     type: 'uph_scale',
     label: 'UPH Standards Scale',
     icon: BarChart2,
-    description: 'Benchmark points-per-action table used to calculate PPH and efficiency.',
-    fileName: 'UPH_scale.csv',
-    notes: 'Contains ACTION, SEC / ACTION, POINTS / ACTION, and ACTIONS / HOUR columns.',
-    ready: false,
+    description: 'Benchmark points-per-action table. Replaces all existing standards on import.',
+    fileName: 'UPH_Scale.csv',
+    notes: 'Columns: ID, ACTION, LOCATION, ITEM SIZE, PROGRAM PROFILE, PROGRAM TYPE, SEC / ACTION, POINTS / ACTION, ACTIONS / HOUR, ACTIVE AT, INACTIVE AT.',
+    ready: true,
+  },
+  {
+    type: 'action_totals',
+    label: 'Action Totals (Weekly)',
+    icon: Activity,
+    description: 'Hourly action count export used for historical shift predictions.',
+    fileName: '5_11 - 5_17 actions.csv',
+    notes: 'Columns: date (M/D/YY), hour, employee, action, Record Count. Multiple weeks can be uploaded — data is aggregated per department.',
+    ready: true,
   },
   {
     type: 'action_logs',
-    label: 'Action Logs',
+    label: 'Action Logs (Raw)',
     icon: ClipboardList,
-    description: 'Daily warehouse action log export. Multiple days per file are supported.',
+    description: 'Daily warehouse action log export. Required for cycle time analysis.',
     fileName: 'Action_Log_Example.csv',
     notes: 'Requires: Date, Hour, Created At, Paylocity Id, Job Title, Employee, Location, Log Type, Action, Program Type, Size.',
     ready: true,
@@ -69,6 +80,15 @@ const IDLE_STATUS: UploadStatus = {
 interface ImportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+// Parse M/D/YY date format from the actions CSV into YYYY-MM-DD
+function parseActionDate(raw: string): string {
+  const parts = raw.trim().split('/')
+  if (parts.length !== 3) return raw
+  const [m, d, yy] = parts.map(Number)
+  const year = yy < 100 ? 2000 + yy : yy
+  return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
 export function ImportModal({ open, onOpenChange }: ImportModalProps) {
@@ -103,8 +123,16 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
   }
 
   async function handleUpload() {
-    if (!file || selected !== 'action_logs') return
+    if (!file || !selected) return
+    if (selected === 'uph_scale') return handleUphScaleUpload()
+    if (selected === 'action_totals') return handleActionTotalsUpload()
+    if (selected === 'action_logs') return handleActionLogsUpload()
+  }
 
+  // ── UPH Scale upload ──────────────────────────────────────────
+
+  async function handleUphScaleUpload() {
+    if (!file) return
     setStatus({ ...IDLE_STATUS, state: 'parsing', message: 'Parsing CSV…' })
 
     Papa.parse<Record<string, string>>(file, {
@@ -118,7 +146,164 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
           return
         }
 
-        // Collect unique employees from the full file
+        const rows: UphScaleRow[] = raw.map((r) => ({
+          action: r['ACTION']?.trim() ?? '',
+          location: r['LOCATION']?.trim() ?? '',
+          itemSize: r['ITEM SIZE']?.trim() ?? '',
+          programProfile: r['PROGRAM PROFILE']?.trim() ?? '',
+          secPerAction: r['SEC / ACTION']?.trim() ?? '',
+          pointsPerAction: r['POINTS / ACTION']?.trim() ?? '',
+          uph: r['ACTIONS / HOUR']?.trim() ?? '',
+        })).filter((r) => r.action && r.uph)
+
+        setStatus({
+          state: 'uploading',
+          message: `Uploading ${rows.length} standards…`,
+          inserted: 0, skipped: 0,
+          totalRows: rows.length, batchesDone: 0, totalBatches: 1,
+        })
+
+        try {
+          const res = await fetch('/api/ingest/uph-scale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows, replace: true }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            setStatus({ ...IDLE_STATUS, state: 'error', message: (err as { error?: string }).error ?? 'Server error' })
+            return
+          }
+          const { inserted } = await res.json() as { inserted: number }
+          setStatus({
+            state: 'done', message: 'Import complete',
+            inserted, skipped: rows.length - inserted,
+            totalRows: rows.length, batchesDone: 1, totalBatches: 1,
+          })
+        } catch {
+          setStatus({ ...IDLE_STATUS, state: 'error', message: 'Network error. Check your connection.' })
+        }
+      },
+      error: (err: { message: string }) => {
+        setStatus({ ...IDLE_STATUS, state: 'error', message: err.message })
+      },
+    })
+  }
+
+  // ── Action Totals upload ──────────────────────────────────────
+
+  async function handleActionTotalsUpload() {
+    if (!file) return
+    setStatus({ ...IDLE_STATUS, state: 'parsing', message: 'Parsing CSV…' })
+
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^﻿/, '').trim(),
+      complete: async (result) => {
+        const raw = result.data
+        if (!raw.length) {
+          setStatus({ ...IDLE_STATUS, state: 'error', message: 'File is empty or could not be parsed.' })
+          return
+        }
+
+        // Aggregate client-side: sum Record Count by (date, hour, action)
+        const aggMap = new Map<string, ActionTotalRow>()
+        for (const r of raw) {
+          const dateRaw = r['date']?.trim() ?? ''
+          const hour = parseInt(r['hour']?.trim() ?? '0', 10)
+          const action = r['action']?.trim() ?? ''
+          const count = parseInt(r['Record Count']?.trim() ?? '0', 10)
+          if (!dateRaw || !action || isNaN(count) || count <= 0) continue
+
+          const date = parseActionDate(dateRaw)
+          const key = `${date}|${hour}|${action}`
+          const existing = aggMap.get(key)
+          if (existing) {
+            existing.totalCount += count
+          } else {
+            aggMap.set(key, { date, hour, action, totalCount: count })
+          }
+        }
+
+        const aggregated = Array.from(aggMap.values())
+        const totalBatches = Math.ceil(aggregated.length / BATCH_SIZE)
+
+        setStatus({
+          state: 'uploading',
+          message: `Uploading ${aggregated.length} aggregated rows…`,
+          inserted: 0, skipped: 0,
+          totalRows: aggregated.length, batchesDone: 0, totalBatches,
+        })
+
+        let totalInserted = 0
+        let totalSkipped = 0
+
+        for (let i = 0; i < totalBatches; i++) {
+          const batch = aggregated.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
+          try {
+            const res = await fetch('/api/ingest/action-totals', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ rows: batch }),
+            })
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}))
+              setStatus((prev) => ({
+                ...prev,
+                state: 'error',
+                message: (err as { error?: string }).error ?? `Server error on batch ${i + 1}`,
+              }))
+              return
+            }
+            const { inserted, skipped } = await res.json() as { inserted: number; skipped: number }
+            totalInserted += inserted
+            totalSkipped += skipped
+            setStatus({
+              state: 'uploading',
+              message: `Uploading batch ${i + 1} of ${totalBatches}…`,
+              inserted: totalInserted, skipped: totalSkipped,
+              totalRows: aggregated.length, batchesDone: i + 1, totalBatches,
+            })
+          } catch {
+            setStatus((prev) => ({
+              ...prev,
+              state: 'error',
+              message: `Network error on batch ${i + 1}. Check your connection.`,
+            }))
+            return
+          }
+        }
+
+        setStatus({
+          state: 'done', message: 'Import complete',
+          inserted: totalInserted, skipped: totalSkipped,
+          totalRows: aggregated.length, batchesDone: totalBatches, totalBatches,
+        })
+      },
+      error: (err: { message: string }) => {
+        setStatus({ ...IDLE_STATUS, state: 'error', message: err.message })
+      },
+    })
+  }
+
+  // ── Action Logs (raw) upload ──────────────────────────────────
+
+  async function handleActionLogsUpload() {
+    if (!file) return
+    setStatus({ ...IDLE_STATUS, state: 'parsing', message: 'Parsing CSV…' })
+
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^﻿/, '').trim(),
+      complete: async (result) => {
+        const raw = result.data
+        if (!raw.length) {
+          setStatus({ ...IDLE_STATUS, state: 'error', message: 'File is empty or could not be parsed.' })
+          return
+        }
+
         const empMap = new Map<string, IngestEmployeeRow>()
         for (const r of raw) {
           const pid = r['Paylocity Id']?.trim()
@@ -153,9 +338,7 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
           state: 'uploading',
           message: `Upserting ${empMap.size} employees…`,
           inserted: 0, skipped: 0,
-          totalRows: actionRows.length,
-          batchesDone: 0,
-          totalBatches,
+          totalRows: actionRows.length, batchesDone: 0, totalBatches,
         })
 
         let totalInserted = 0
@@ -164,7 +347,6 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
         for (let i = 0; i < totalBatches; i++) {
           const batch = actionRows.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE)
           const isFirst = i === 0
-
           try {
             const res = await fetch('/api/ingest/action-logs', {
               method: 'POST',
@@ -175,7 +357,6 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
                 isFirst,
               }),
             })
-
             if (!res.ok) {
               const err = await res.json().catch(() => ({}))
               setStatus((prev) => ({
@@ -185,19 +366,14 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
               }))
               return
             }
-
             const { inserted, skipped } = await res.json() as { inserted: number; skipped: number }
             totalInserted += inserted
             totalSkipped += skipped
-
             setStatus({
               state: 'uploading',
               message: `Uploading batch ${i + 1} of ${totalBatches}…`,
-              inserted: totalInserted,
-              skipped: totalSkipped,
-              totalRows: actionRows.length,
-              batchesDone: i + 1,
-              totalBatches,
+              inserted: totalInserted, skipped: totalSkipped,
+              totalRows: actionRows.length, batchesDone: i + 1, totalBatches,
             })
           } catch {
             setStatus((prev) => ({
@@ -210,13 +386,9 @@ export function ImportModal({ open, onOpenChange }: ImportModalProps) {
         }
 
         setStatus({
-          state: 'done',
-          message: 'Import complete',
-          inserted: totalInserted,
-          skipped: totalSkipped,
-          totalRows: actionRows.length,
-          batchesDone: totalBatches,
-          totalBatches,
+          state: 'done', message: 'Import complete',
+          inserted: totalInserted, skipped: totalSkipped,
+          totalRows: actionRows.length, batchesDone: totalBatches, totalBatches,
         })
       },
       error: (err: { message: string }) => {

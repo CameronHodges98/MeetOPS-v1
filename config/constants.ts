@@ -113,8 +113,8 @@ export type ShiftQuarter = typeof SHIFT_QUARTERS[number]['quarter']
 // ============================================================
 
 export const PRODUCTION_DEPARTMENTS = [
-  'Picking', 'Processing', 'Load Out', 'Put Away',
-  'Lot', 'Returns', 'Material Handling',
+  'Picking', 'Processing', 'Customer Service', 'Put Away',
+  'Returns', 'Material Handling',
 ] as const
 
 export type ProductionDepartment = typeof PRODUCTION_DEPARTMENTS[number]
@@ -122,14 +122,15 @@ export type ProductionDepartment = typeof PRODUCTION_DEPARTMENTS[number]
 // ============================================================
 // Job Title → Department mapping
 // Used by shift planner to group employees into plannable units.
+// Load Out and Lot Attendant both map to Customer Service.
 // ============================================================
 
 export const DEPARTMENT_MAP: Record<string, string> = {
   'Picker': 'Picking',
   'Inventory Processor': 'Processing',
-  'Load Out': 'Load Out',
+  'Load Out': 'Customer Service',
   'Put Away': 'Put Away',
-  'Lot Attendant': 'Lot',
+  'Lot Attendant': 'Customer Service',
   'Returns Clerk': 'Returns',
   'Material Handler': 'Material Handling',
   'Area Manager': 'Management',

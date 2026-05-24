@@ -630,6 +630,35 @@ export const flexPlanEntries = pgTable(
 )
 
 // ============================================================
+// HOURLY ACTION TOTALS
+// Pre-aggregated action counts by date/hour/location/department/action.
+// Imported from the weekly actions export CSV (aggregated — no employee names).
+// Used by the shift plan historical query instead of the raw action_logs table
+// to avoid slow joins and employee-level granularity we don't need for predictions.
+// ============================================================
+
+export const hourlyActionTotals = pgTable(
+  'hourly_action_totals',
+  {
+    id: serial('id').primaryKey(),
+    date: date('date').notNull(),
+    hour: integer('hour').notNull(), // 0–23
+    location: varchar('location', { length: 50 }).notNull(),
+    department: varchar('department', { length: 100 }).notNull(),
+    action: varchar('action', { length: 100 }).notNull(),
+    totalCount: integer('total_count').notNull(),
+    source: dataSourceEnum('source').notNull().default('csv'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    dateHourDeptActionIdx: uniqueIndex('hat_date_hour_dept_action_idx').on(
+      table.date, table.hour, table.location, table.department, table.action
+    ),
+    dateLocationIdx: index('hat_date_location_idx').on(table.date, table.location),
+  })
+)
+
+// ============================================================
 // INFERRED TYPES
 // These are the TypeScript types for every table, automatically
 // derived from the schema above. Import from here — never write
@@ -664,3 +693,5 @@ export type Warehouse = typeof warehouses.$inferSelect
 export type NewWarehouse = typeof warehouses.$inferInsert
 export type UserPreference = typeof userPreferences.$inferSelect
 export type NewUserPreference = typeof userPreferences.$inferInsert
+export type HourlyActionTotal = typeof hourlyActionTotals.$inferSelect
+export type NewHourlyActionTotal = typeof hourlyActionTotals.$inferInsert

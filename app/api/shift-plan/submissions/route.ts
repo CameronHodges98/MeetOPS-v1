@@ -80,3 +80,34 @@ export async function POST(request: Request) {
 
   return Response.json(row)
 }
+
+// DELETE /api/shift-plan/submissions
+// Body: { planId, department }
+// Clears a submission back to zeroes and removes the submittedAt timestamp.
+export async function DELETE(request: Request) {
+  const { userId } = await auth()
+  if (!userId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { planId, department } = await request.json() as { planId: number; department: string }
+  if (!planId || !department) {
+    return Response.json({ error: 'planId and department required' }, { status: 400 })
+  }
+
+  const plan = await db.query.shiftPlans.findFirst({ where: eq(shiftPlans.id, planId) })
+  if (!plan) return Response.json({ error: 'Plan not found' }, { status: 404 })
+  if (plan.publishedAt) return Response.json({ error: 'Plan is already published' }, { status: 409 })
+
+  await db
+    .update(shiftPlanSubmissions)
+    .set({
+      calloutCount: 0,
+      otCount: 0,
+      exemptEntries: [],
+      submittedAt: null,
+      submittedByClerkId: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(shiftPlanSubmissions.shiftPlanId, planId), eq(shiftPlanSubmissions.department, department)))
+
+  return Response.json({ ok: true })
+}

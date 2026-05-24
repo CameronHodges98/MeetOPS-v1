@@ -81,6 +81,21 @@ export function useDeleteFlexEntry(planId: number | undefined) {
 
 // ── Submissions ───────────────────────────────────────────────
 
+export function useResetSubmission(date: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: { planId: number; department: string }) => {
+      const res = await fetch('/api/shift-plan/submissions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('Failed to reset submission')
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['shift-plan', date] }),
+  })
+}
+
 export function useSubmitDept(date: string) {
   const qc = useQueryClient()
   return useMutation({

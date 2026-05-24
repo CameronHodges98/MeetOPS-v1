@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, CheckCircle2, Clock } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, Clock, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { DeptSnapshot } from '../utils'
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
@@ -18,9 +18,10 @@ interface DeptSubmissionCardProps {
     otCount: number
     exemptEntries: ExemptEntry[]
   }) => void
+  onReset: (data: { planId: number; department: string }) => void
 }
 
-export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit }: DeptSubmissionCardProps) {
+export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onReset }: DeptSubmissionCardProps) {
   const sub = snap.submission
   const [callouts, setCallouts] = useState(sub?.calloutCount ?? 0)
   const [ot, setOt] = useState(sub?.otCount ?? 0)
@@ -49,6 +50,14 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit }: Dept
   function handleSubmit() {
     onSubmit({ planId, department: snap.department, calloutCount: callouts, otCount: ot, exemptEntries: exempts })
     setDirty(false)
+  }
+
+  function handleReset() {
+    setCallouts(0)
+    setOt(0)
+    setExempts([])
+    setDirty(false)
+    onReset({ planId, department: snap.department })
   }
 
   const effective = computeEffectiveHeadcount({
@@ -148,20 +157,31 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit }: Dept
         <span className="font-bold text-foreground text-sm">{effective} effective</span>
       </div>
 
-      {/* Submit button */}
+      {/* Submit / Reset buttons */}
       {!isPublished && (
-        <button
-          onClick={handleSubmit}
-          disabled={!dirty && isSubmitted}
-          className={cn(
-            'w-full rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-            dirty || !isSubmitted
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'bg-muted text-muted-foreground cursor-not-allowed'
+        <div className="flex gap-2">
+          <button
+            onClick={handleSubmit}
+            disabled={!dirty && isSubmitted}
+            className={cn(
+              'flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
+              dirty || !isSubmitted
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted text-muted-foreground cursor-not-allowed'
+            )}
+          >
+            {isSubmitted && !dirty ? 'Submitted' : 'Submit'}
+          </button>
+          {(isSubmitted || callouts > 0 || ot > 0 || exempts.length > 0) && (
+            <button
+              onClick={handleReset}
+              title="Reset to incomplete"
+              className="rounded-lg border border-border px-2.5 py-2 text-muted-foreground hover:text-red-500 hover:border-red-300 dark:hover:border-red-800 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
           )}
-        >
-          {isSubmitted && !dirty ? 'Submitted' : 'Submit'}
-        </button>
+        </div>
       )}
     </div>
   )
