@@ -24,7 +24,9 @@ import { computeEffectiveHeadcount, computeRecommendedFlexes, computeVtoRecommen
 import { QuarterCard } from '@/features/shift-plan/components/QuarterCard'
 import { QuarterDrawer } from '@/features/shift-plan/components/QuarterDrawer'
 import { DeptSubmissionCard } from '@/features/shift-plan/components/DeptSubmissionCard'
+import { HistoricalPlansModal } from '@/features/shift-plan/components/HistoricalPlansModal'
 import { cn } from '@/lib/utils/cn'
+import { History } from 'lucide-react'
 import type { ShiftQuarter } from '@/config/constants'
 
 const HELP_SECTIONS: HelpSection[] = [
@@ -94,7 +96,8 @@ const DATE_OPTIONS = buildDateOptions()
 
 export default function ShiftPlanPage() {
   const { selectedDate, setSelectedDate, selectedQuarter, setSelectedQuarter } = useShiftPlanStore()
-  const [helpOpen, setHelpOpen] = useState(false)
+  const [helpOpen, setHelpOpen]         = useState(false)
+  const [historicalsOpen, setHistoricalsOpen] = useState(false)
 
   const { data: planData, isLoading: planLoading } = useShiftPlan(selectedDate)
   const { data: historical = [] } = useHistoricalDemand(selectedDate)
@@ -158,12 +161,23 @@ export default function ShiftPlanPage() {
         isOpen={helpOpen}
         onClose={() => setHelpOpen(false)}
       />
+      <HistoricalPlansModal
+        isOpen={historicalsOpen}
+        onClose={() => setHistoricalsOpen(false)}
+      />
       <PageHeader
         title="Shift Plan"
         description="Daily headcount planning and labor flex decisions"
         actions={
           <div className="flex items-center gap-3">
             <HelpButton onClick={() => setHelpOpen(true)} />
+            <button
+              onClick={() => setHistoricalsOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <History className="h-4 w-4" />
+              Historicals
+            </button>
             <select
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
