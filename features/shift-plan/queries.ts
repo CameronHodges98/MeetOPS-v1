@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { FlexPlanEntry, ShiftPlan, ShiftPlanSubmission } from '@/lib/db/schema'
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
-import type { DeptSnapshot } from './utils'
+import type { DeptSnapshot, ShiftEntry } from './utils'
 import { useWarehouseStore } from '@/lib/stores/warehouse'
 
 export interface ShiftPlanResponse {
@@ -131,7 +131,7 @@ export function useUpdateDeptRoster(date: string) {
   const location = useWarehouseStore((s) => s.activeWarehouse?.name ?? 'Mesa')
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { department: string; count: number }) => {
+    mutationFn: async (body: { department: string; count: number; shiftSchedule?: ShiftEntry[] | null }) => {
       const res = await fetch('/api/shift-plan/roster', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

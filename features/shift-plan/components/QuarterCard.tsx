@@ -7,7 +7,7 @@ import type { SHIFT_QUARTERS } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
 import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
 import type { HistoricalRow } from '../queries'
-import { computeEffectiveHeadcount, computeGap, gapStatus } from '../utils'
+import { computeQuarterEffective, computeQuarterCapacity, computeGap, gapStatus } from '../utils'
 
 type Quarter = typeof SHIFT_QUARTERS[number]
 
@@ -54,13 +54,13 @@ export function QuarterCard({
   // Flex-adjusted Processing effective drives Put Away and MH needed — must match drawer logic
   const processingSnap   = snapshots.find((s) => s.department === 'Processing')
   const processingAdjEff = processingSnap
-    ? computeEffectiveHeadcount(processingSnap) + flexInFor('Processing') - flexOutFor('Processing')
+    ? computeQuarterEffective(processingSnap, quarter.hours) + flexInFor('Processing') - flexOutFor('Processing')
     : 0
 
   // Per-dept summary — effective is flex-adjusted so the indicator reflects actual staffing
   const deptRows = snapshots.map((snap) => {
     const hist      = qHistorical.find((r) => r.department === snap.department)
-    const effective = computeEffectiveHeadcount(snap) + flexInFor(snap.department) - flexOutFor(snap.department)
+    const effective = computeQuarterEffective(snap, quarter.hours) + flexInFor(snap.department) - flexOutFor(snap.department)
     let needed = 0
     if (snap.department === 'Put Away') {
       needed = Math.ceil((processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
@@ -86,15 +86,14 @@ export function QuarterCard({
   const totalAssigned = deptRows.reduce((s, r) => s + r.effective, 0)
   const totalNeeded   = deptRows.reduce((s, r) => s + r.needed, 0)
 
-  // Per-dept capacity estimates: effective headcount × blended UPH × quarter hours × utilization
+  // Per-dept capacity estimates: schedule-aware (prorated per hour when shifts are defined)
   const deptCapacities = snapshots
     .filter((s) => DEPT_DEFAULT_UPH[s.department] != null)
     .map((s) => {
       const uph = DEPT_DEFAULT_UPH[s.department]
-      const effective = computeEffectiveHeadcount(s)
       return {
         dept: s.department,
-        capacity: Math.round(effective * uph * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR),
+        capacity: computeQuarterCapacity(s, quarter.hours, uph),
       }
     })
     .filter((s) => s.capacity > 0)

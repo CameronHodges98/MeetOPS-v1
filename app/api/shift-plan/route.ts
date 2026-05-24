@@ -41,9 +41,9 @@ export async function GET(request: Request) {
     .from(departmentRosters)
     .where(eq(departmentRosters.location, location))
 
-  const rosterByDept: Record<string, number> = {}
+  const rosterByDept: Record<string, { count: number; shiftSchedule: unknown }> = {}
   for (const row of rosterRows) {
-    rosterByDept[row.department] = row.count
+    rosterByDept[row.department] = { count: row.count, shiftSchedule: row.shiftSchedule }
   }
 
   // Existing submissions for this plan
@@ -58,7 +58,8 @@ export async function GET(request: Request) {
 
   const departments = PRODUCTION_DEPARTMENTS.map((dept) => ({
     department: dept,
-    scheduledCount: rosterByDept[dept] ?? 0,
+    scheduledCount: rosterByDept[dept]?.count ?? 0,
+    shiftSchedule: (rosterByDept[dept]?.shiftSchedule as import('@/features/shift-plan/utils').ShiftEntry[] | null) ?? null,
     submission: submissionByDept[dept] ?? null,
   }))
 

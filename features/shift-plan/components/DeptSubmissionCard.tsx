@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, CheckCircle2, Clock, RotateCcw, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, Clock, RotateCcw, Pencil, Check, X, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import type { DeptSnapshot } from '../utils'
+import type { DeptSnapshot, ShiftEntry } from '../utils'
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
 import { computeEffectiveHeadcount, computeOnSiteHeadcount, getExemptTotal, getExemptOnlyTotal } from '../utils'
 
@@ -19,7 +19,7 @@ interface DeptSubmissionCardProps {
     exemptEntries: ExemptEntry[]
   }) => void
   onReset: (data: { planId: number; department: string }) => void
-  onUpdateRoster: (data: { department: string; count: number }) => void
+  onUpdateRoster: (data: { department: string; count: number; shiftSchedule?: ShiftEntry[] | null }) => void
 }
 
 export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onReset, onUpdateRoster }: DeptSubmissionCardProps) {
@@ -36,18 +36,52 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
   const [rosterInput, setRosterInput] = useState(snap.scheduledCount)
   const rosterInputRef = useRef<HTMLInputElement>(null)
 
+  // Shift schedule state
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleEdits, setScheduleEdits] = useState<ShiftEntry[]>(snap.shiftSchedule ?? [])
+  const [scheduleDirty, setScheduleDirty] = useState(false)
+
   useEffect(() => {
     if (editingRoster) rosterInputRef.current?.focus()
   }, [editingRoster])
 
   function saveRoster() {
-    onUpdateRoster({ department: snap.department, count: rosterInput })
+    onUpdateRoster({ department: snap.department, count: rosterInput, shiftSchedule: scheduleEdits.length > 0 ? scheduleEdits : null })
     setEditingRoster(false)
   }
 
   function cancelRoster() {
     setRosterInput(snap.scheduledCount)
     setEditingRoster(false)
+  }
+
+  function addShift() {
+    setScheduleEdits((prev) => [...prev, { startTime: '05:00', endTime: '15:00', count: 1 }])
+    setScheduleDirty(true)
+  }
+
+  function updateShift(i: number, patch: Partial<ShiftEntry>) {
+    setScheduleEdits((prev) => prev.map((e, idx) => idx === i ? { ...e, ...patch } : e))
+    setScheduleDirty(true)
+  }
+
+  function removeShift(i: number) {
+    setScheduleEdits((prev) => prev.filter((_, idx) => idx !== i))
+    setScheduleDirty(true)
+  }
+
+  function saveSchedule() {
+    const cleaned = scheduleEdits.filter((e) => e.count > 0)
+    onUpdateRoster({ department: snap.department, count: snap.scheduledCount, shiftSchedule: cleaned.length > 0 ? cleaned : null })
+    setScheduleEdits(cleaned)
+    setScheduleDirty(false)
+    setScheduleOpen(false)
+  }
+
+  function cancelSchedule() {
+    setScheduleEdits(snap.shiftSchedule ?? [])
+    setScheduleDirty(false)
+    setScheduleOpen(false)
   }
 
   const isSubmitted = !!sub?.submittedAt && !dirty
@@ -140,6 +174,97 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
             : <Clock className="h-4 w-4 text-muted-foreground" />
           }
         </div>
+      </div>
+
+      {/* Shift schedule section */}
+      <div className="mb-3">
+        <button
+          onClick={() => setScheduleOpen((o) => !o)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+        >
+          {scheduleOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          <span>
+            Shift Schedule
+            {snap.shiftSchedule && snap.shiftSchedule.length > 0
+              ? <span className="ml-1 text-foreground font-medium">({snap.shiftSchedule.length} shift{snap.shiftSchedule.length !== 1 ? 's' : ''})</span>
+              : <span className="ml-1 opacity-60">— not configured</span>
+            }
+          </span>
+        </button>
+
+        {scheduleOpen && (
+          <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+            {scheduleEdits.map((e, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <div className="flex flex-col gap-0.5 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="time"
+                      value={e.startTime}
+                      disabled={isPublished}
+                      onChange={(ev) => updateShift(i, { startTime: ev.target.value })}
+                      className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                    />
+                    <span className="text-xs text-muted-foreground">–</span>
+                    <input
+                      type="time"
+                      value={e.endTime}
+                      disabled={isPublished}
+                      onChange={(ev) => updateShift(i, { endTime: ev.target.value })}
+                      className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={e.count}
+                      disabled={isPublished}
+                      onChange={(ev) => updateShift(i, { count: Number(ev.target.value) })}
+                      className="w-14 rounded-md border border-border bg-background px-2 py-1 text-xs text-center disabled:opacity-50"
+                      title="Headcount for this shift"
+                    />
+                    <span className="text-xs text-muted-foreground">ppl</span>
+                    {!isPublished && (
+                      <button onClick={() => removeShift(i)} className="text-muted-foreground hover:text-red-500 transition-colors ml-auto">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {scheduleEdits.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">No shifts defined — all headcount spans the full shift.</p>
+            )}
+
+            {!isPublished && (
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={addShift}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Plus className="h-3 w-3" /> Add shift
+                </button>
+                {scheduleDirty && (
+                  <>
+                    <button
+                      onClick={saveSchedule}
+                      className="ml-auto text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                    >
+                      Save schedule
+                    </button>
+                    <button
+                      onClick={cancelSchedule}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Inputs */}
