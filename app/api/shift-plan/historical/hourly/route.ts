@@ -82,5 +82,5 @@ export async function GET(request: Request) {
     ORDER BY department, hour
   `))
 
-  return Response.json(rows)
+  return Response.json(rows.rows)
 }

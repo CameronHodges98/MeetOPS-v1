@@ -101,5 +101,5 @@ export async function GET(request: Request) {
     ORDER BY department, quarter
   `))
 
-  return Response.json(rows)
+  return Response.json(rows.rows)
 }
