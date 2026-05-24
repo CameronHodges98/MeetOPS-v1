@@ -7,8 +7,6 @@ const ACTION_TO_DEPT: Record<string, string> = {
   'scanned for pick': 'Picking',
   'scanned for singles pick': 'Picking',
   'picked multipick item': 'Picking',
-  'item lost - no recent scan': 'Picking',
-  'marked item as found': 'Picking',
 
   // Put Away
   'item putaway': 'Put Away',
@@ -17,6 +15,7 @@ const ACTION_TO_DEPT: Record<string, string> = {
   'appointment loaded out': 'Customer Service',
   'checked in': 'Customer Service',
   'return item received': 'Customer Service',
+  'appointment created': 'Customer Service',
 }
 
 export function actionToDept(action: string): string | null {

@@ -1,8 +1,8 @@
 'use client'
 
-import { ArrowRight, Users, Zap, TrendingUp, ChevronRight, Clock } from 'lucide-react'
+import { ArrowRight, Users, Zap, ChevronRight, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { SHIFT_CONFIG } from '@/config/constants'
+import { SHIFT_CONFIG, DEPT_DEFAULT_UPH } from '@/config/constants'
 import type { SHIFT_QUARTERS } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
 import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
@@ -46,43 +46,60 @@ export function QuarterCard({
   const CAPACITY_EST_DEPTS = new Set(['Processing', 'Returns'])
   const qHistorical = historicalRows.filter((r) => r.quarter === quarter.quarter && !CAPACITY_EST_DEPTS.has(r.department))
 
-  // Per-dept summary
+  // Flex adjustments for this quarter
+  const qFlexes    = confirmedFlexes.filter((f) => f.quarter === quarter.quarter)
+  const flexInFor  = (dept: string) => qFlexes.filter((f) => f.toDepartment   === dept).reduce((s, f) => s + f.headcountMoved, 0)
+  const flexOutFor = (dept: string) => qFlexes.filter((f) => f.fromDepartment === dept).reduce((s, f) => s + f.headcountMoved, 0)
+
+  // Flex-adjusted Processing effective drives Put Away and MH needed — must match drawer logic
+  const processingSnap   = snapshots.find((s) => s.department === 'Processing')
+  const processingAdjEff = processingSnap
+    ? computeEffectiveHeadcount(processingSnap) + flexInFor('Processing') - flexOutFor('Processing')
+    : 0
+
+  // Per-dept summary — effective is flex-adjusted so the indicator reflects actual staffing
   const deptRows = snapshots.map((snap) => {
-    const hist = qHistorical.find((r) => r.department === snap.department)
-    const effective = computeEffectiveHeadcount(snap)
-    const needed = hist ? Number(hist.avg_headcount_needed) : 0
+    const hist      = qHistorical.find((r) => r.department === snap.department)
+    const effective = computeEffectiveHeadcount(snap) + flexInFor(snap.department) - flexOutFor(snap.department)
+    let needed = 0
+    if (snap.department === 'Put Away') {
+      needed = Math.ceil((processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
+    } else if (snap.department === 'Material Handling') {
+      needed = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
+    } else if (!CAPACITY_EST_DEPTS.has(snap.department)) {
+      needed = hist ? Number(hist.avg_headcount_needed) : 0
+    }
     const gap = computeGap(effective, needed)
     return { dept: snap.department, effective, needed, gap, status: gapStatus(gap) }
   })
 
-  // Overall quarter health: worst status wins
-  const overallStatus = deptRows.some((r) => r.status === 'red')
+  // Overall quarter health: only depts with a demand target (needed > 0) drive the indicator.
+  // Source depts like Processing and Returns have needed = 0 — their effective can go negative
+  // after flex moves out, which should not color the card red since there's no staffing target.
+  const targetedDepts = deptRows.filter((r) => r.needed > 0)
+  const overallStatus = targetedDepts.some((r) => r.status === 'red')
     ? 'red'
-    : deptRows.some((r) => r.status === 'amber')
+    : targetedDepts.some((r) => r.status === 'amber')
       ? 'amber'
       : 'green'
 
   const totalAssigned = deptRows.reduce((s, r) => s + r.effective, 0)
   const totalNeeded   = deptRows.reduce((s, r) => s + r.needed, 0)
-  const totalActions  = qHistorical.reduce((s, r) => s + Number(r.avg_total_actions), 0)
-  const dataPoints    = qHistorical.length > 0
-    ? Math.min(...qHistorical.map((r) => Number(r.data_points)))
-    : 0
 
-  // Capacity estimates for depts not tracked via historical actions
-  const processingSnap = snapshots.find((s) => s.department === 'Processing')
-  const processingEffective = processingSnap ? computeEffectiveHeadcount(processingSnap) : 0
-  const processingCapacity = Math.round(
-    processingEffective * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR
-  )
-  const returnsSnap = snapshots.find((s) => s.department === 'Returns')
-  const returnsEffective = returnsSnap ? computeEffectiveHeadcount(returnsSnap) : 0
-  const returnsCapacity = Math.round(
-    returnsEffective * SHIFT_CONFIG.RETURNS_DEFAULT_UPH * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR
-  )
+  // Per-dept capacity estimates: effective headcount × blended UPH × quarter hours × utilization
+  const deptCapacities = snapshots
+    .filter((s) => DEPT_DEFAULT_UPH[s.department] != null)
+    .map((s) => {
+      const uph = DEPT_DEFAULT_UPH[s.department]
+      const effective = computeEffectiveHeadcount(s)
+      return {
+        dept: s.department,
+        capacity: Math.round(effective * uph * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR),
+      }
+    })
+    .filter((s) => s.capacity > 0)
 
-  const qFlexes = confirmedFlexes.filter((f) => f.quarter === quarter.quarter)
-  const qRecs   = recommendedFlexes
+  const qRecs = recommendedFlexes
 
   const allSubmitted = submittedCount >= totalDepts
 
@@ -165,45 +182,21 @@ export function QuarterCard({
           </div>
         </div>
 
-        {/* 3 — Predicted actions */}
+        {/* 3 — Capacity estimate */}
         <div className="flex items-start gap-2.5">
           <Zap className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground mb-1">
-              Predicted actions
-              {dataPoints > 0 && dataPoints < 6 && (
-                <span className="ml-1 text-amber-500 dark:text-amber-400">({dataPoints}/6 weeks)</span>
-              )}
-              {dataPoints >= 6 && (
-                <span className="ml-1 text-green-600 dark:text-green-400">(6 weeks)</span>
-              )}
-            </p>
-            {totalActions === 0 && processingCapacity === 0 && returnsCapacity === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No historical data yet</p>
+            <p className="text-xs text-muted-foreground mb-1">Capacity estimate</p>
+            {deptCapacities.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No headcount submitted yet</p>
             ) : (
               <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                {qHistorical.map((r) => (
-                  <span key={r.department} className="text-xs">
-                    <span className="font-medium text-foreground">
-                      {Number(r.avg_total_actions).toLocaleString()}
-                    </span>
-                    <span className="text-muted-foreground"> {r.department}</span>
+                {deptCapacities.map((s) => (
+                  <span key={s.dept} className="text-xs">
+                    <span className="font-medium text-foreground">~{s.capacity.toLocaleString()}</span>
+                    <span className="text-muted-foreground"> {s.dept}</span>
                   </span>
                 ))}
-                {processingCapacity > 0 && (
-                  <span className="text-xs">
-                    <span className="font-medium text-foreground">~{processingCapacity.toLocaleString()}</span>
-                    <span className="text-muted-foreground"> Processing</span>
-                    <span className="text-muted-foreground/60"> est.</span>
-                  </span>
-                )}
-                {returnsCapacity > 0 && (
-                  <span className="text-xs">
-                    <span className="font-medium text-foreground">~{returnsCapacity.toLocaleString()}</span>
-                    <span className="text-muted-foreground"> Returns</span>
-                    <span className="text-muted-foreground/60"> est.</span>
-                  </span>
-                )}
               </div>
             )}
           </div>

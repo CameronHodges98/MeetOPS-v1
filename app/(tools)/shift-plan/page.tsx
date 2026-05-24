@@ -127,13 +127,15 @@ export default function ShiftPlanPage() {
     }
     const processingSnap = snapshots.find((s) => s.department === 'Processing')
     if (processingSnap) {
-      const processingEff = computeEffectiveHeadcount(processingSnap)
-      // Put Away must keep pace with Processing output; hours × utilization cancel
+      // Use flex-adjusted Processing effective — matches QuarterCard and QuarterDrawer logic
+      const qFlexes    = flexEntries.filter((f) => f.quarter === quarterNum)
+      const flexIn     = qFlexes.filter((f) => f.toDepartment   === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
+      const flexOut    = qFlexes.filter((f) => f.fromDepartment === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
+      const processingAdjEff = computeEffectiveHeadcount(processingSnap) + flexIn - flexOut
       map['Put Away'] = Math.ceil(
-        (processingEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH
+        (processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH
       )
-      // 1 Material Handler required per MH_PROCESSORS_RATIO Processors on the line
-      map['Material Handling'] = Math.ceil(processingEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
+      map['Material Handling'] = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
     }
     return map
   }

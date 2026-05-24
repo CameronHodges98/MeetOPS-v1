@@ -76,22 +76,41 @@ export const SHIFT_CONFIG = {
   // indirect tasks, breaks, etc. Headcount = actions / (UPH × hours × UTILIZATION_FACTOR).
   UTILIZATION_FACTOR: 0.85,
 
-  // Default UPH for Processing (RC SORTABLE is ~97% of volume at 65 UPH).
-  PROCESSING_DEFAULT_UPH: 65,
+  // Blended UPH for Processing — Mesa April volume mix applied to Mesa UPH scale rates:
+  // RC Sortable 94.51%×65 + RC XL 2.59%×15 + FC Nonsort 1.65%×60 + RC Nonsort 1.25%×32 = 63
+  PROCESSING_DEFAULT_UPH: 63,
 
-  // Default UPH for Returns clerks.
+  // Default UPH for Returns clerks (manager-stated goal).
   RETURNS_DEFAULT_UPH: 40,
 
-  // Default UPH for Put Away (Item Putaway action).
-  // Put Away needed headcount = ceil(Processing output / Put Away UPH).
-  // Both UPH values have the same hours × utilization factor so they cancel,
-  // leaving: ceil(processingEff × PROCESSING_DEFAULT_UPH / PUTAWAY_DEFAULT_UPH).
-  PUTAWAY_DEFAULT_UPH: 65,
+  // Blended UPH for Put Away — size-weighted at 70/25/3.5/1.5 (S/M/L/XL) using Mesa rates:
+  // 0.70×310 + 0.25×180 + 0.035×95 + 0.015×25 = 266
+  // Also used in the Put Away needed ratio: ceil(processingEff × PROCESSING_UPH / PUTAWAY_UPH)
+  PUTAWAY_DEFAULT_UPH: 266,
+
+  // Blended UPH for Picking — volume-weighted across 3 actions from Mesa action logs,
+  // then size-blended at 70/25/3.5/1.5.
+  // Scanned for Pick 78.4%×74.7 + Picked Multipick 14.9%×74.7 + Singles Pick 6.6%×103.2 = 77
+  PICKING_DEFAULT_UPH: 77,
+
+  // Blended UPH for Customer Service — volume-weighted across 4 Mesa CS actions:
+  // Appt Loaded Out 39.4%×64 + Checked In 22.7%×55 + Return Item Received 19.1%×180 + Appt Created 18.8%×270 = 123
+  CUSTOMER_SERVICE_DEFAULT_UPH: 123,
 
   // 1 Material Handler is needed for every N Processors on the line.
   // MH needed = ceil(processingEffective / MH_PROCESSORS_RATIO).
   MH_PROCESSORS_RATIO: 4,
 } as const
+
+// Per-department blended UPH used for shift plan capacity estimates.
+// Material Handling is excluded — it is an indirect role staffed by ratio, not UPH target.
+export const DEPT_DEFAULT_UPH: Record<string, number> = {
+  'Picking':           77,
+  'Processing':        63,
+  'Put Away':         266,
+  'Customer Service': 123,
+  'Returns':           40,
+}
 
 // ============================================================
 // Coaching
