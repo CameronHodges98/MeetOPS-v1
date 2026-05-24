@@ -60,6 +60,9 @@ export function QuarterCard({
   const totalAssigned = deptRows.reduce((s, r) => s + r.effective, 0)
   const totalNeeded   = deptRows.reduce((s, r) => s + r.needed, 0)
   const totalActions  = qHistorical.reduce((s, r) => s + Number(r.avg_total_actions), 0)
+  const dataPoints    = qHistorical.length > 0
+    ? Math.min(...qHistorical.map((r) => Number(r.data_points)))
+    : 0
 
   const qFlexes = confirmedFlexes.filter((f) => f.quarter === quarter.quarter)
   const qRecs   = recommendedFlexes
@@ -149,7 +152,15 @@ export function QuarterCard({
         <div className="flex items-start gap-2.5">
           <Zap className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground mb-1">Predicted actions (6-wk avg)</p>
+            <p className="text-xs text-muted-foreground mb-1">
+              Predicted actions
+              {dataPoints > 0 && dataPoints < 6 && (
+                <span className="ml-1 text-amber-500 dark:text-amber-400">({dataPoints}/6 weeks)</span>
+              )}
+              {dataPoints >= 6 && (
+                <span className="ml-1 text-green-600 dark:text-green-400">(6 weeks)</span>
+              )}
+            </p>
             {totalActions === 0 ? (
               <p className="text-xs text-muted-foreground italic">No historical data yet</p>
             ) : (

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils/cn'
 import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
 import type { DeptSnapshot, RecommendedFlex } from '../utils'
-import type { HistoricalRow } from '../queries'
+import type { HistoricalRow, HistoricalHourRow } from '../queries'
 import { computeEffectiveHeadcount, computeGap, gapStatus, gapLabel } from '../utils'
 
 const HOUR_LABELS: Record<number, string> = {
@@ -25,6 +25,7 @@ interface QuarterDrawerProps {
   quarterNum: number
   snapshots: DeptSnapshot[]
   historicalRows: HistoricalRow[]
+  historicalHourlyRows: HistoricalHourRow[]
   confirmedFlexes: FlexPlanEntry[]
   recommendedFlexes: RecommendedFlex[]
   isPublished: boolean
@@ -37,6 +38,7 @@ export function QuarterDrawer({
   quarterNum,
   snapshots,
   historicalRows,
+  historicalHourlyRows,
   confirmedFlexes,
   recommendedFlexes,
   isPublished,
@@ -137,25 +139,32 @@ export function QuarterDrawer({
           {/* ── Hour-by-hour breakdown ── */}
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              Hour-by-Hour (Predicted Actions)
+              Hour-by-Hour (Predicted)
             </h3>
             <div className="space-y-1.5">
               {quarter.hours.map((h) => {
                 const label = HOUR_LABELS[h]
-                const hourRows = qHistorical.map((r) => ({
-                  dept: r.department,
-                  // Distribute quarterly avg evenly across hours for approximation
-                  actions: Math.round(Number(r.avg_total_actions) / quarter.hours.length),
-                })).filter((r) => r.actions > 0)
+                // Use real per-hour averages from the hourly endpoint
+                const hourRows = historicalHourlyRows
+                  .filter((r) => r.hour === h)
+                  .map((r) => ({
+                    dept: r.department,
+                    actions: Number(r.avg_total_actions),
+                    needed: Number(r.avg_headcount_needed),
+                  }))
+                  .filter((r) => r.actions > 0)
 
                 const totalHourActions = hourRows.reduce((s, r) => s + r.actions, 0)
+                const totalHourNeeded  = hourRows.reduce((s, r) => s + r.needed, 0)
 
                 return (
                   <div key={h} className="rounded-lg border border-border px-3 py-2">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs font-semibold">{label}</span>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {totalHourActions > 0 ? `~${totalHourActions.toLocaleString()} actions` : 'No data'}
+                        {totalHourActions > 0
+                          ? `~${totalHourActions.toLocaleString()} actions · ${totalHourNeeded} needed`
+                          : 'No data'}
                       </span>
                     </div>
                     {hourRows.length > 0 && (

@@ -71,6 +71,10 @@ export const SHIFT_CONFIG = {
 
   // Minimum headcount per active department during operating hours
   MIN_HEADCOUNT_PER_DEPT: 1,
+
+  // Workers operate at ~85% of theoretical max throughput due to walk time,
+  // indirect tasks, breaks, etc. Headcount = actions / (UPH × hours × UTILIZATION_FACTOR).
+  UTILIZATION_FACTOR: 0.85,
 } as const
 
 // ============================================================

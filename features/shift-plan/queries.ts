@@ -18,6 +18,15 @@ export interface HistoricalRow {
   data_points: number
 }
 
+export interface HistoricalHourRow {
+  department: string
+  hour: number
+  avg_headcount_needed: number
+  avg_total_actions: number
+  avg_uph: number
+  data_points: number
+}
+
 // ── Plan shell ────────────────────────────────────────────────
 
 export function useShiftPlan(date: string) {
@@ -127,6 +136,19 @@ export function useHistoricalDemand(date: string) {
     queryFn: async () => {
       const res = await fetch(`/api/shift-plan/historical?date=${date}&location=${encodeURIComponent(location)}`)
       if (!res.ok) throw new Error('Failed to load historical data')
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useHistoricalHourly(date: string) {
+  const location = useWarehouseStore((s) => s.activeWarehouse?.name ?? 'Mesa')
+  return useQuery<HistoricalHourRow[]>({
+    queryKey: ['shift-plan-historical-hourly', date, location],
+    queryFn: async () => {
+      const res = await fetch(`/api/shift-plan/historical/hourly?date=${date}&location=${encodeURIComponent(location)}`)
+      if (!res.ok) throw new Error('Failed to load hourly historical data')
       return res.json()
     },
     staleTime: 5 * 60 * 1000,

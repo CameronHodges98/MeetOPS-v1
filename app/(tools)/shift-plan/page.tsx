@@ -7,6 +7,7 @@ import { useShiftPlanStore } from '@/features/shift-plan/store'
 import {
   useShiftPlan,
   useHistoricalDemand,
+  useHistoricalHourly,
   useFlexEntries,
   useAddFlexEntry,
   useDeleteFlexEntry,
@@ -26,6 +27,7 @@ export default function ShiftPlanPage() {
 
   const { data: planData, isLoading: planLoading } = useShiftPlan(selectedDate)
   const { data: historical = [] } = useHistoricalDemand(selectedDate)
+  const { data: historicalHourly = [] } = useHistoricalHourly(selectedDate)
   const planId = planData?.plan?.id
   const { data: flexEntries = [] } = useFlexEntries(planId)
 
@@ -170,6 +172,7 @@ export default function ShiftPlanPage() {
           quarterNum={drawerQuarter.quarter}
           snapshots={snapshots}
           historicalRows={historical}
+          historicalHourlyRows={historicalHourly}
           confirmedFlexes={flexEntries}
           recommendedFlexes={drawerRecs}
           isPublished={isPublished}
