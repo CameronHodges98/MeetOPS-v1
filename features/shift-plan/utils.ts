@@ -11,12 +11,23 @@ export function getExemptTotal(entries: ExemptEntry[]): number {
   return entries.reduce((sum, e) => sum + (e.count ?? 0), 0)
 }
 
-// Effective headcount = scheduled − callouts − exempt + OT
+// Production effective = scheduled − callouts + OT − designated
+// "Designated" associates are physically present but performing a non-production
+// function (auditor, trainer, restricted duty). They do not count toward filling
+// the dept's production headcount need, and cannot be recommended for flex.
 export function computeEffectiveHeadcount(snap: DeptSnapshot): number {
   const { scheduledCount, submission } = snap
   if (!submission) return scheduledCount
-  const exempt = getExemptTotal((submission.exemptEntries as ExemptEntry[]) ?? [])
-  return Math.max(0, scheduledCount - submission.calloutCount - exempt + submission.otCount)
+  const designated = getExemptTotal((submission.exemptEntries as ExemptEntry[]) ?? [])
+  return Math.max(0, scheduledCount - submission.calloutCount - designated + submission.otCount)
+}
+
+// Total bodies on-site (including designated non-production roles).
+// Used for display purposes to distinguish "present but non-production" from absent.
+export function computeOnSiteHeadcount(snap: DeptSnapshot): number {
+  const { scheduledCount, submission } = snap
+  if (!submission) return scheduledCount
+  return Math.max(0, scheduledCount - submission.calloutCount + submission.otCount)
 }
 
 // Gap = effective − needed  (positive = surplus, negative = short)
@@ -55,6 +66,8 @@ export function computeRecommendedFlexes(
 ): RecommendedFlex[] {
   const gapMap = new Map<string, number>()
   for (const snap of snapshots) {
+    // computeEffectiveHeadcount already excludes designated non-production roles,
+    // so the gap reflects true production surplus/deficit only.
     const effective = computeEffectiveHeadcount(snap)
     const needed = neededByDept[snap.department] ?? 0
     gapMap.set(snap.department, effective - needed)
@@ -85,4 +98,27 @@ export function computeRecommendedFlexes(
   tryFlex('Picking', 'Put Away')
 
   return flexes
+}
+
+// VTO recommendations are only generated for Q4.
+// Any department still showing a surplus in the final quarter is eligible
+// to be offered Voluntary Time Off — the manager decides who and how many.
+export interface VtoRecommendation {
+  department: string
+  headcountEligible: number
+}
+
+export function computeVtoRecommendations(
+  snapshots: DeptSnapshot[],
+  neededByDept: Record<string, number>,
+  quarterNum: number
+): VtoRecommendation[] {
+  if (quarterNum !== 4) return []
+
+  return snapshots
+    .map((snap) => ({
+      department: snap.department,
+      headcountEligible: computeGap(computeEffectiveHeadcount(snap), neededByDept[snap.department] ?? 0),
+    }))
+    .filter((r) => r.headcountEligible > 0)
 }

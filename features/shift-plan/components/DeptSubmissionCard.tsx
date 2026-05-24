@@ -5,7 +5,7 @@ import { Plus, Trash2, CheckCircle2, Clock, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { DeptSnapshot } from '../utils'
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
-import { computeEffectiveHeadcount, getExemptTotal } from '../utils'
+import { computeEffectiveHeadcount, computeOnSiteHeadcount, getExemptTotal } from '../utils'
 
 interface DeptSubmissionCardProps {
   snap: DeptSnapshot
@@ -60,11 +60,13 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
     onReset({ planId, department: snap.department })
   }
 
-  const effective = computeEffectiveHeadcount({
+  const previewSnap = {
     ...snap,
     submission: sub ? { ...sub, calloutCount: callouts, otCount: ot, exemptEntries: exempts } : null,
-  })
-  const exemptTotal = getExemptTotal(exempts)
+  }
+  const onSite = computeOnSiteHeadcount(previewSnap)
+  const designatedTotal = getExemptTotal(exempts)
+  const effective = computeEffectiveHeadcount(previewSnap)
 
   return (
     <div className={cn(
@@ -112,7 +114,7 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
         </div>
       </div>
 
-      {/* Exempt entries */}
+      {/* Designated (non-production) roles */}
       <div className="mb-3 space-y-1.5">
         {exempts.map((e, i) => (
           <div key={i} className="flex gap-2 items-center">
@@ -126,7 +128,7 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
             />
             <input
               type="text"
-              placeholder="Reason (e.g. Training)"
+              placeholder="Role (e.g. Auditor, Trainer)"
               value={e.reason}
               disabled={isPublished}
               onChange={(ev) => updateExempt(i, { reason: ev.target.value })}
@@ -144,17 +146,32 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
             onClick={addExempt}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            <Plus className="h-3 w-3" /> Add exempt
+            <Plus className="h-3 w-3" /> Add designated role
           </button>
         )}
       </div>
 
-      {/* Effective headcount summary */}
-      <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-xs mb-3">
-        <span className="text-muted-foreground">
-          {snap.scheduledCount} − {callouts} callouts − {exemptTotal} exempt + {ot} OT
-        </span>
-        <span className="font-bold text-foreground text-sm">{effective} effective</span>
+      {/* Headcount summary */}
+      <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs mb-3 space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">
+            {snap.scheduledCount} scheduled − {callouts} callouts + {ot} OT
+          </span>
+          <span className="font-medium text-foreground">{onSite} on-site</span>
+        </div>
+        {designatedTotal > 0 && (
+          <div className="flex items-center justify-between border-t border-border/50 pt-1">
+            <span className="text-muted-foreground">
+              − {designatedTotal} designated (non-production)
+            </span>
+            <span className="font-bold text-foreground text-sm">{effective} production</span>
+          </div>
+        )}
+        {designatedTotal === 0 && (
+          <div className="flex items-center justify-end">
+            <span className="font-bold text-foreground text-sm">{effective} production effective</span>
+          </div>
+        )}
       </div>
 
       {/* Submit / Reset buttons */}
