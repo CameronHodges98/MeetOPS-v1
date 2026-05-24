@@ -6,8 +6,12 @@ import { APP_CONFIG, SHIFT_QUARTERS, SHIFT_CONFIG } from '@/config/constants'
 // GET /api/shift-plan/historical?date=YYYY-MM-DD&location=Mesa
 // Returns 6-week same-weekday average headcount needed per dept per quarter.
 // Headcount = CEIL(actions / (weighted_UPH × quarter_hours × UTILIZATION_FACTOR))
+// Tracked actions (1:1 with capacity estimate):
+//   Picking:          Scanned for Pick, Scanned for Singles Pick, Picked Multipick Item
+//   Put Away:         Item Putaway
+//   Customer Service: Appointment Loaded Out, Checked In, Return Item Received, Appointment Created
 // Size-weighted UPH: 70% small / 25% medium / 3.5% large / 1.5% x-large.
-// For program-variant actions, prefers RC SORTABLE standard (~97% of volume).
+// For program-variant actions (Processing), prefers RC SORTABLE as primary profile.
 export async function GET(request: Request) {
   const { userId } = await auth()
   if (!userId) return Response.json({ error: 'Unauthorized' }, { status: 401 })
