@@ -40,14 +40,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {isFullscreen ? (
               <Providers>{children}</Providers>
             ) : (
-              <>
+              <Providers>
                 <Navbar />
-                <Providers>
-                  <main className="container mx-auto px-4 py-6 max-w-screen-2xl">
-                    {children}
-                  </main>
-                </Providers>
-              </>
+                <main className="container mx-auto px-4 py-6 max-w-screen-2xl">
+                  {children}
+                </main>
+              </Providers>
             )}
           </ThemeProvider>
         </body>
