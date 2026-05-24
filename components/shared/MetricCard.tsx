@@ -25,9 +25,9 @@ export function MetricCard({
     <div
       className={cn(
         'rounded-xl border bg-card p-5 shadow-sm',
-        status === 'needs_attention' && 'border-red-200 bg-red-50',
-        status === 'watch' && 'border-amber-200 bg-amber-50',
-        status === 'on_target' && 'border-green-200 bg-green-50',
+        status === 'needs_attention' && 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30',
+        status === 'watch' && 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30',
+        status === 'on_target' && 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30',
         className
       )}
     >

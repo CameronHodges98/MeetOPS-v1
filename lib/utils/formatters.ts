@@ -31,27 +31,27 @@ export const STATUS_DISPLAY: Record<
 > = {
   on_target: {
     label: 'On Target',
-    colorClass: 'text-green-700',
-    bgClass: 'bg-green-100',
+    colorClass: 'text-green-700 dark:text-green-400',
+    bgClass: 'bg-green-100 dark:bg-green-950/50',
     dotClass: 'bg-green-500',
   },
   watch: {
     label: 'Watch',
-    colorClass: 'text-amber-700',
-    bgClass: 'bg-amber-100',
+    colorClass: 'text-amber-700 dark:text-amber-400',
+    bgClass: 'bg-amber-100 dark:bg-amber-950/50',
     dotClass: 'bg-amber-500',
   },
   needs_attention: {
     label: 'Needs Attention',
-    colorClass: 'text-red-700',
-    bgClass: 'bg-red-100',
+    colorClass: 'text-red-700 dark:text-red-400',
+    bgClass: 'bg-red-100 dark:bg-red-950/50',
     dotClass: 'bg-red-500',
   },
   insufficient_data: {
     label: 'Insufficient Data',
-    colorClass: 'text-gray-500',
-    bgClass: 'bg-gray-100',
-    dotClass: 'bg-gray-400',
+    colorClass: 'text-muted-foreground',
+    bgClass: 'bg-muted',
+    dotClass: 'bg-muted-foreground',
   },
 }
 
@@ -64,9 +64,9 @@ export function formatCycleRatio(ratio: number): string {
 }
 
 export function getCycleRatioColorClass(ratio: number): string {
-  if (ratio <= 1.0) return 'text-green-700'
-  if (ratio <= 1.5) return 'text-amber-700'
-  return 'text-red-700'
+  if (ratio <= 1.0) return 'text-green-700 dark:text-green-400'
+  if (ratio <= 1.5) return 'text-amber-700 dark:text-amber-400'
+  return 'text-red-700 dark:text-red-400'
 }
 
 // ============================================================
