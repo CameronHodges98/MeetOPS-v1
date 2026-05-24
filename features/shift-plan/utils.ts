@@ -81,5 +81,8 @@ export function computeRecommendedFlexes(
   tryFlex('Material Handling', 'Customer Service')
   tryFlex('Picking', 'Customer Service')
 
+  // Picking surplus (after CS needs are met) → Put Away
+  tryFlex('Picking', 'Put Away')
+
   return flexes
 }
