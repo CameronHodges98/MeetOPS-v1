@@ -804,7 +804,7 @@ export const coachingCandidates = pgTable(
   'coaching_candidates',
   {
     id: serial('id').primaryKey(),
-    uploadId: integer('upload_id').notNull().references(() => coachingUploads.id),
+    uploadId: integer('upload_id').notNull().references(() => coachingUploads.id, { onDelete: 'cascade' }),
     managerName: varchar('manager_name', { length: 100 }).notNull(),
     employeeName: varchar('employee_name', { length: 100 }).notNull(),
     jobTitle: varchar('job_title', { length: 100 }),
