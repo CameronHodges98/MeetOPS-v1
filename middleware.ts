@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/unauthorized',
+  '/invite(.*)',   // CT invite acceptance route
 ])
 
 export default clerkMiddleware(async (auth, request) => {
@@ -22,9 +23,16 @@ export default clerkMiddleware(async (auth, request) => {
   // Require authentication for all other routes
   await auth.protect()
 
-  // Check email domain — redirect before any page renders
-  const { userId } = await auth()
+  const { userId, sessionClaims } = await auth()
   if (userId) {
+    // Fast path: users with a role in Clerk publicMetadata bypass the domain check.
+    // CTs are granted role='ct' via invite flow and shouldn't need @nellisauction.com.
+    const role = (sessionClaims?.publicMetadata as Record<string, unknown> | undefined)?.role
+    if (role) {
+      return NextResponse.next({ request: { headers: requestHeaders } })
+    }
+
+    // Slow path: check email domain via Clerk API
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
     const primary = user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)

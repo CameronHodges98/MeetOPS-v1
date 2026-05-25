@@ -65,6 +65,19 @@ export const coachingStatusEnum = pgEnum('coaching_status', [
   'acknowledged',  // Manager reviewed and employee signed off
 ])
 
+export const assignmentStatusEnum = pgEnum('assignment_status', [
+  'assigned',        // Manager assigned, CT notified
+  'in_progress',     // CT has started the template form
+  'pending_review',  // CT submitted, awaiting manager completion
+  'complete',        // Manager marked complete
+])
+
+export const trainerScheduleEnum = pgEnum('trainer_schedule', [
+  'weekday',  // Mon–Thu only
+  'weekend',  // Fri–Sun only
+  'both',     // Any day
+])
+
 export const trainingStatusEnum = pgEnum('training_status', [
   'active',
   'completed',
@@ -706,6 +719,180 @@ export const departmentRosters = pgTable(
   })
 )
 
+// ============================================================
+// USER PROFILES
+// Extends Clerk users with role and trainer schedule.
+// clerkId matches Clerk's userId (e.g., "user_2abc...").
+// CTs (Certified Trainers) may not be in the employees table —
+// they authenticate via invite link and bypass domain check.
+// ============================================================
+
+export const userProfiles = pgTable(
+  'user_profiles',
+  {
+    id: serial('id').primaryKey(),
+    clerkId: varchar('clerk_id', { length: 100 }).notNull().unique(),
+    role: varchar('role', { length: 50 }),          // 'ct', 'manager', 'ops', 'gm'
+    displayName: varchar('display_name', { length: 100 }),
+    email: varchar('email', { length: 200 }),        // personal email for CT invites
+    trainerSchedule: trainerScheduleEnum('trainer_schedule'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    clerkIdIdx: uniqueIndex('user_profiles_clerk_id_idx').on(table.clerkId),
+  })
+)
+
+// ============================================================
+// COACHING INVITES
+// One-time invite tokens for external CTs who don't have an
+// @nellisauction.com email. The link lets them bypass the
+// domain check and creates a Clerk account with role=ct set
+// in publicMetadata automatically.
+// ============================================================
+
+export const coachingInvites = pgTable(
+  'coaching_invites',
+  {
+    id: serial('id').primaryKey(),
+    token: varchar('token', { length: 100 }).notNull().unique(),
+    createdByClerkId: varchar('created_by_clerk_id', { length: 100 }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    usedByClerkId: varchar('used_by_clerk_id', { length: 100 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenIdx: uniqueIndex('coaching_invites_token_idx').on(table.token),
+  })
+)
+
+// ============================================================
+// COACHING UPLOADS
+// One row per weekly CSV upload. Tracks who uploaded, the file
+// name, and the date range the CSV covers. candidateCount is
+// set after parsing completes so the UI can show upload history.
+// ============================================================
+
+export const coachingUploads = pgTable(
+  'coaching_uploads',
+  {
+    id: serial('id').primaryKey(),
+    uploadedByClerkId: varchar('uploaded_by_clerk_id', { length: 100 }).notNull(),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    weekStartDate: date('week_start_date').notNull(),
+    weekEndDate: date('week_end_date').notNull(),
+    candidateCount: integer('candidate_count').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    weekIdx: index('coaching_uploads_week_idx').on(table.weekStartDate),
+  })
+)
+
+// ============================================================
+// COACHING CANDIDATES
+// One row per employee who appeared in a coaching upload and
+// met the threshold (avgPph < 100 OR avgGapPct > 10%).
+// isExempt lets managers exclude employees from the workflow
+// without deleting them (e.g., temporary role change).
+// assignmentId is set once a coaching assignment is created.
+// ============================================================
+
+export const coachingCandidates = pgTable(
+  'coaching_candidates',
+  {
+    id: serial('id').primaryKey(),
+    uploadId: integer('upload_id').notNull().references(() => coachingUploads.id),
+    managerName: varchar('manager_name', { length: 100 }).notNull(),
+    employeeName: varchar('employee_name', { length: 100 }).notNull(),
+    jobTitle: varchar('job_title', { length: 100 }),
+    avgPph: numeric('avg_pph', { precision: 8, scale: 2 }),
+    avgGapPct: numeric('avg_gap_pct', { precision: 8, scale: 2 }),
+    avgDirectPct: numeric('avg_direct_pct', { precision: 8, scale: 2 }),
+    avgIndirectPct: numeric('avg_indirect_pct', { precision: 8, scale: 2 }),
+    avgAdminPct: numeric('avg_admin_pct', { precision: 8, scale: 2 }),
+    avgHours: numeric('avg_hours', { precision: 6, scale: 2 }),
+    daysInSample: integer('days_in_sample').notNull().default(1),
+    isExempt: boolean('is_exempt').notNull().default(false),
+    exemptedByClerkId: varchar('exempted_by_clerk_id', { length: 100 }),
+    exemptedAt: timestamp('exempted_at', { withTimezone: true }),
+    assignmentId: integer('assignment_id'),   // FK set after insert to avoid circular dep
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    uploadIdx: index('coaching_candidates_upload_idx').on(table.uploadId),
+    managerIdx: index('coaching_candidates_manager_idx').on(table.managerName),
+  })
+)
+
+// ============================================================
+// COACHING TEMPLATES
+// One template per job category (Processing, Returns, Picking,
+// Put Away, Customer Service). Managers can create, edit, and
+// delete templates. objectives is a JSONB array of
+// { id: string, text: string } objects.
+// ============================================================
+
+export const coachingTemplates = pgTable(
+  'coaching_templates',
+  {
+    id: serial('id').primaryKey(),
+    department: varchar('department', { length: 100 }).notNull(),
+    name: varchar('name', { length: 200 }).notNull(),
+    // [{ id: string, text: string }]
+    objectives: jsonb('objectives').notNull().default('[]'),
+    isActive: boolean('is_active').notNull().default(true),
+    updatedByClerkId: varchar('updated_by_clerk_id', { length: 100 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    departmentIdx: index('coaching_templates_dept_idx').on(table.department),
+  })
+)
+
+// ============================================================
+// COACHING ASSIGNMENTS
+// The active coaching workflow record. Created when a manager
+// assigns a CT to a candidate. status flows:
+//   assigned → in_progress → pending_review → complete
+// objectiveResults is a JSONB array of:
+//   { objectiveId: string, result: 'understands' | 'bottleneck', comment?: string }
+// dueCtAt = createdAt + 1 day; dueManagerAt = ctSubmittedAt + 1 day
+// ============================================================
+
+export const coachingAssignments = pgTable(
+  'coaching_assignments',
+  {
+    id: serial('id').primaryKey(),
+    candidateId: integer('candidate_id').notNull().references(() => coachingCandidates.id),
+    templateId: integer('template_id').notNull().references(() => coachingTemplates.id),
+    assignedByClerkId: varchar('assigned_by_clerk_id', { length: 100 }).notNull(),
+    trainerClerkId: varchar('trainer_clerk_id', { length: 100 }).notNull(),
+    managerNotes: varchar('manager_notes', { length: 2000 }),
+    status: assignmentStatusEnum('status').notNull().default('assigned'),
+    // [{ objectiveId, result: 'understands' | 'bottleneck', comment?: string }]
+    objectiveResults: jsonb('objective_results'),
+    ctSummaryNotes: varchar('ct_summary_notes', { length: 2000 }),
+    ctStartedAt: timestamp('ct_started_at', { withTimezone: true }),
+    ctSubmittedAt: timestamp('ct_submitted_at', { withTimezone: true }),
+    dueCtAt: timestamp('due_ct_at', { withTimezone: true }),
+    dueManagerAt: timestamp('due_manager_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    // Audit trail: if this assignment was reassigned, points to the original
+    reassignedFromId: integer('reassigned_from_id'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    candidateIdx: index('coaching_assignments_candidate_idx').on(table.candidateId),
+    trainerIdx: index('coaching_assignments_trainer_idx').on(table.trainerClerkId),
+    statusIdx: index('coaching_assignments_status_idx').on(table.status),
+  })
+)
+
 export type ShiftPlan = typeof shiftPlans.$inferSelect
 export type NewShiftPlan = typeof shiftPlans.$inferInsert
 export type ShiftPlanSubmission = typeof shiftPlanSubmissions.$inferSelect
@@ -720,3 +907,15 @@ export type UserPreference = typeof userPreferences.$inferSelect
 export type NewUserPreference = typeof userPreferences.$inferInsert
 export type HourlyActionTotal = typeof hourlyActionTotals.$inferSelect
 export type NewHourlyActionTotal = typeof hourlyActionTotals.$inferInsert
+export type UserProfile = typeof userProfiles.$inferSelect
+export type NewUserProfile = typeof userProfiles.$inferInsert
+export type CoachingInvite = typeof coachingInvites.$inferSelect
+export type NewCoachingInvite = typeof coachingInvites.$inferInsert
+export type CoachingUpload = typeof coachingUploads.$inferSelect
+export type NewCoachingUpload = typeof coachingUploads.$inferInsert
+export type CoachingCandidate = typeof coachingCandidates.$inferSelect
+export type NewCoachingCandidate = typeof coachingCandidates.$inferInsert
+export type CoachingTemplate = typeof coachingTemplates.$inferSelect
+export type NewCoachingTemplate = typeof coachingTemplates.$inferInsert
+export type CoachingAssignment = typeof coachingAssignments.$inferSelect
+export type NewCoachingAssignment = typeof coachingAssignments.$inferInsert

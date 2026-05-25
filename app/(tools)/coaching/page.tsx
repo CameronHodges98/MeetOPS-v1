@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { CoachingView } from '@/features/coaching/components/CoachingView'
 
 export const metadata: Metadata = { title: 'Coaching' }
 
@@ -8,11 +9,9 @@ export default function CoachingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Coaching"
-        description="Trainer assignments, coaching sessions, and performance improvement tracking"
+        description="Assign CTs to under-performers, track session progress, and manage templates"
       />
-      <div className="rounded-xl border-2 border-dashed border-muted p-12 text-center text-muted-foreground">
-        Coaching tool — coming next
-      </div>
+      <CoachingView />
     </div>
   )
 }
