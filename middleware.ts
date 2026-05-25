@@ -8,7 +8,8 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/unauthorized',
-  '/invite(.*)',   // CT invite acceptance route
+  '/invite(.*)',                      // CT invite acceptance page
+  '/api/coaching/invites/(.*)',       // token validation — no auth needed to check if a link is valid
 ])
 
 export default clerkMiddleware(async (auth, request) => {
