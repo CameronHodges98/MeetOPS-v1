@@ -2,17 +2,19 @@
 
 import { useState } from 'react'
 import * as Tabs from '@radix-ui/react-tabs'
-import { Users, ClipboardList, FileText, UserPlus } from 'lucide-react'
+import { Users, ClipboardList, FileText, UserPlus, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { CandidatesDashboard } from './CandidatesDashboard'
 import { AssignmentBoard } from './AssignmentBoard'
 import { TemplatesManager } from './TemplatesManager'
+import { CtRoster } from './CtRoster'
 import { InviteCtModal } from './InviteCtModal'
 
 const TABS = [
-  { value: 'candidates', label: 'Candidates', icon: Users },
+  { value: 'candidates',  label: 'Candidates',  icon: Users },
   { value: 'assignments', label: 'Assignments', icon: ClipboardList },
-  { value: 'templates', label: 'Templates', icon: FileText },
+  { value: 'templates',   label: 'Templates',   icon: FileText },
+  { value: 'trainers',    label: 'CTs',         icon: ShieldCheck },
 ]
 
 export function CoachingView() {
@@ -57,6 +59,10 @@ export function CoachingView() {
 
       <Tabs.Content value="templates">
         <TemplatesManager />
+      </Tabs.Content>
+
+      <Tabs.Content value="trainers">
+        <CtRoster onInvite={() => setInviteOpen(true)} />
       </Tabs.Content>
 
       <InviteCtModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
