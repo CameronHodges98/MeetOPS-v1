@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useUser, SignIn } from '@clerk/nextjs'
+import { useUser, useSession, SignIn } from '@clerk/nextjs'
 import { Zap, CheckCircle2, XCircle, Loader2, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
@@ -12,6 +12,7 @@ type AcceptStatus = 'idle' | 'accepting' | 'done' | 'error'
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>()
   const { user, isLoaded } = useUser()
+  const { session } = useSession()
   const router = useRouter()
 
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>('loading')
@@ -54,8 +55,9 @@ export default function InvitePage() {
         throw new Error(data.error ?? 'Failed to accept invite')
       }
       setAcceptStatus('done')
-      // Reload session claims so the new role takes effect, then redirect
-      await user?.reload()
+      // Force a new JWT so the updated publicMetadata.role is in the session
+      // claims before the middleware checks it on /coaching.
+      await session?.reload()
       setTimeout(() => router.push('/coaching'), 1500)
     } catch (e: unknown) {
       setAcceptStatus('error')
