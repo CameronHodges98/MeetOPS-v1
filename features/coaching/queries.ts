@@ -19,9 +19,10 @@ export function useCoachingUploads() {
 export function useUploadCoachingCsv() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, weekStart }: { file: File; weekStart?: string }) => {
       const fd = new FormData()
       fd.append('file', file)
+      if (weekStart) fd.append('weekStart', weekStart)
       const res = await fetch('/api/coaching/upload', { method: 'POST', body: fd })
       if (!res.ok) throw new Error(await res.text())
       return res.json() as Promise<{ uploadId: number; candidateCount: number; weekStart: string; weekEnd: string }>

@@ -7,7 +7,7 @@ import { useCoachingCandidates, useCoachingUploads, useUploadCoachingCsv, useTog
 import { useCoachingStore } from '../store'
 import { AssignModal } from './AssignModal'
 import type { CoachingCandidate } from '@/lib/db/schema'
-import { format } from 'date-fns'
+import { format, startOfWeek } from 'date-fns'
 
 function StatusPill({ candidate }: { candidate: CoachingCandidate }) {
   if (candidate.isExempt) {
@@ -147,12 +147,15 @@ export function CandidatesDashboard() {
   const { activeUploadId, setActiveUploadId, managerFilter, setManagerFilter } = useCoachingStore()
   const [assignCandidate, setAssignCandidate] = useState<CoachingCandidate | null>(null)
   const [uploadError, setUploadError] = useState('')
+  // Default week start to this Monday
+  const defaultWeekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+  const [weekStart, setWeekStart] = useState(defaultWeekStart)
 
   const { data: uploads = [] } = useCoachingUploads()
   const uploadCsv = useUploadCoachingCsv()
 
-  // Use active upload or latest
-  const resolvedUploadId = activeUploadId ?? (uploads.length > 0 ? uploads[uploads.length - 1]?.id : null)
+  // Use active upload or most recent
+  const resolvedUploadId = activeUploadId ?? (uploads.length > 0 ? uploads[0]?.id : null)
   const { data: candidates = [], isLoading } = useCoachingCandidates(
     resolvedUploadId !== undefined ? resolvedUploadId : null
   )
@@ -162,7 +165,7 @@ export function CandidatesDashboard() {
     if (!file) return
     setUploadError('')
     try {
-      const result = await uploadCsv.mutateAsync(file)
+      const result = await uploadCsv.mutateAsync({ file, weekStart })
       setActiveUploadId(result.uploadId)
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
@@ -221,25 +224,37 @@ export function CandidatesDashboard() {
           </select>
         )}
 
-        <div className="ml-auto">
-          <label className={cn(
-            'flex items-center gap-2 cursor-pointer rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors',
-            uploadCsv.isPending && 'opacity-60 cursor-not-allowed pointer-events-none'
-          )}>
-            {uploadCsv.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            {uploadCsv.isPending ? 'Uploading…' : 'Upload Weekly CSV'}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Week of</label>
             <input
-              type="file"
-              accept=".csv"
-              className="sr-only"
-              onChange={handleFileChange}
-              disabled={uploadCsv.isPending}
+              type="date"
+              value={weekStart}
+              onChange={(e) => setWeekStart(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
             />
-          </label>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground opacity-0 select-none">Upload</label>
+            <label className={cn(
+              'flex items-center gap-2 cursor-pointer rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors h-9',
+              uploadCsv.isPending && 'opacity-60 cursor-not-allowed pointer-events-none'
+            )}>
+              {uploadCsv.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              {uploadCsv.isPending ? 'Uploading…' : 'Upload CSV'}
+              <input
+                type="file"
+                accept=".csv"
+                className="sr-only"
+                onChange={handleFileChange}
+                disabled={uploadCsv.isPending}
+              />
+            </label>
+          </div>
         </div>
       </div>
 

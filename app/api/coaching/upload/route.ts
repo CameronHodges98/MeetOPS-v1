@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { db } from '@/lib/db'
 import { coachingUploads, coachingCandidates } from '@/lib/db/schema'
-import {
-  parseCoachingCsv,
-  aggregateAndFilterCandidates,
-  getWeekBounds,
-} from '@/lib/ingestion/csv/parsers/coachingCsv'
+import { parseCoachingCsv, filterCandidates } from '@/lib/ingestion/csv/parsers/coachingCsv'
+import { format, startOfWeek, endOfWeek } from 'date-fns'
+import { desc } from 'drizzle-orm'
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth()
@@ -18,18 +16,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   }
 
+  // Optional week start date supplied by the uploader (yyyy-MM-dd).
+  // Defaults to the Monday of the current week.
+  const weekStartParam = formData.get('weekStart')?.toString()
+  const today = new Date()
+  const weekStart = weekStartParam
+    ? weekStartParam
+    : format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+  const weekEnd = format(
+    endOfWeek(weekStartParam ? new Date(weekStartParam + 'T12:00:00') : today, { weekStartsOn: 1 }),
+    'yyyy-MM-dd'
+  )
+
   const csvText = await (file as File).text()
   const fileName = (file as File).name
 
   const rows = parseCoachingCsv(csvText)
   if (rows.length === 0) {
-    return NextResponse.json({ error: 'No employee rows found in CSV' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'No production-role employee rows found in CSV. Check that the file matches the expected format.' },
+      { status: 400 }
+    )
   }
 
-  const { weekStart, weekEnd } = getWeekBounds(rows)
-  const candidates = aggregateAndFilterCandidates(rows)
+  const candidates = filterCandidates(rows)
 
-  // Insert upload record first
+  // Insert upload record
   const [upload] = await db
     .insert(coachingUploads)
     .values({
@@ -66,7 +78,6 @@ export async function POST(request: NextRequest) {
   )
 }
 
-// GET: list recent uploads
 export async function GET(request: NextRequest) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -74,7 +85,7 @@ export async function GET(request: NextRequest) {
   const uploads = await db
     .select()
     .from(coachingUploads)
-    .orderBy(coachingUploads.createdAt)
+    .orderBy(desc(coachingUploads.createdAt))
     .limit(20)
 
   return NextResponse.json(uploads)

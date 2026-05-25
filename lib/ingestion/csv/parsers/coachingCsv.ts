@@ -1,88 +1,67 @@
 import Papa from 'papaparse'
 
-export interface CoachingCsvRow {
-  date: string         // yyyy-MM-dd
+// ============================================================
+// Coaching CSV Format (flat weekly report)
+// Columns: FLAGS, LOCATION, LOCATION ID, EMPLOYEE, EMPLOYEE CARGO ID,
+//   EMPLOYEE PAYLOCITY ID, EMPLOYEE COMPANY ID, JOB TITLE, SUPERVISOR CARGO ID,
+//   SUPERVISOR, DIRECT HOURS, INDIRECT HOURS, ADMIN HOURS, GAP HOURS,
+//   TOTAL HOURS, PUNCH HOURS, POINTS, PPH, GAP %, TENURE
+//
+// One row per employee, already aggregated for the week.
+// GAP % is stored as a decimal (0.15 = 15%).
+// Names and job titles are ALL CAPS — converted to title case here.
+// ============================================================
+
+interface RawRow {
+  FLAGS: string
+  LOCATION: string
+  EMPLOYEE: string
+  'JOB TITLE': string
+  SUPERVISOR: string
+  'DIRECT HOURS': string
+  'INDIRECT HOURS': string
+  'ADMIN HOURS': string
+  'TOTAL HOURS': string
+  PPH: string
+  'GAP %': string
+  TENURE: string
+}
+
+function toTitleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function num(s: string): number {
+  return parseFloat(s?.trim()) || 0
+}
+
+// Job titles eligible for the coaching threshold check.
+// Purely indirect/admin roles (AM, Safety, Admin) are excluded.
+const PRODUCTION_TITLES = new Set([
+  'PICKER',
+  'INVENTORY PROCESSOR',
+  'LOAD OUT',
+  'PUT AWAY',
+  'RETURNS CLERK',
+  'MATERIAL HANDLER',
+  'LOT ATTENDANT',
+])
+
+export interface ParsedCoachingRow {
+  employeeName: string
   managerName: string
   jobTitle: string
-  employeeName: string
-  points: number
-  hours: number
   pph: number
-  gapPct: number
+  gapPct: number       // as percentage (e.g., 15.41, not 0.1541)
   directPct: number
   indirectPct: number
   adminPct: number
+  totalHours: number
 }
 
-interface RawCsvRow {
-  Group: string
-  Points: string
-  Hours: string
-  'PPH': string
-  'Gap %': string
-  'Direct %': string
-  'Indirect %': string
-  'Admin %': string
-}
-
-function parsePercent(s: string): number {
-  return parseFloat(s.replace('%', '').trim()) || 0
-}
-
-function parseNum(s: string): number {
-  return parseFloat(s.trim()) || 0
-}
-
-// Parse a Group cell like " -> Mesa -> 2026-05-11 -> Manager Name -> Job Title -> Employee"
-// Returns depth (number of segments after stripping leading whitespace) and the parts
-function parseGroup(group: string): { depth: number; parts: string[] } {
-  const parts = group
-    .split('->')
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  return { depth: parts.length, parts }
-}
-
-export function parseCoachingCsv(csvText: string): CoachingCsvRow[] {
-  const result = Papa.parse<RawCsvRow>(csvText, {
-    header: true,
-    skipEmptyLines: true,
-  })
-
-  const rows: CoachingCsvRow[] = []
-
-  for (const raw of result.data) {
-    const { depth, parts } = parseGroup(raw.Group ?? '')
-
-    // Only employee-level rows: Mesa -> date -> manager -> jobTitle -> employee (depth 5)
-    if (depth !== 5) continue
-
-    // parts: [location, date, managerName, jobTitle, employeeName]
-    const [, date, managerName, jobTitle, employeeName] = parts
-
-    // Skip rows with zero hours (inactive / no data)
-    const hours = parseNum(raw.Hours)
-    if (hours <= 0) continue
-
-    rows.push({
-      date,
-      managerName,
-      jobTitle,
-      employeeName,
-      points: parseNum(raw.Points),
-      hours,
-      pph: parseNum(raw['PPH']),
-      gapPct: parsePercent(raw['Gap %']),
-      directPct: parsePercent(raw['Direct %']),
-      indirectPct: parsePercent(raw['Indirect %']),
-      adminPct: parsePercent(raw['Admin %']),
-    })
-  }
-
-  return rows
-}
-
-export interface AggregatedCandidate {
+export interface CoachingCandidate {
   managerName: string
   employeeName: string
   jobTitle: string
@@ -92,65 +71,71 @@ export interface AggregatedCandidate {
   avgIndirectPct: number
   avgAdminPct: number
   avgHours: number
-  daysInSample: number
+  daysInSample: number  // always 1 for this flat weekly format
 }
 
-// Aggregate multiple days for the same employee under the same manager, then
-// apply thresholds to determine candidates for coaching.
-// Thresholds:
-//   - Most roles: avgPph < 100 OR avgGapPct > 10
-//   - Returns Clerk: avgPph < 36
-export function aggregateAndFilterCandidates(rows: CoachingCsvRow[]): AggregatedCandidate[] {
-  // Key: employeeName + '|' + managerName (same employee may move between managers rarely)
-  const map = new Map<string, { rows: CoachingCsvRow[] }>()
+export function parseCoachingCsv(csvText: string): ParsedCoachingRow[] {
+  const result = Papa.parse<RawRow>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+  })
 
-  for (const row of rows) {
-    const key = `${row.employeeName}|${row.managerName}`
-    if (!map.has(key)) map.set(key, { rows: [] })
-    map.get(key)!.rows.push(row)
-  }
+  const rows: ParsedCoachingRow[] = []
 
-  const candidates: AggregatedCandidate[] = []
+  for (const raw of result.data) {
+    const jobTitleRaw = (raw['JOB TITLE'] ?? '').trim().toUpperCase()
 
-  for (const [, { rows: empRows }] of map) {
-    const first = empRows[0]
-    const n = empRows.length
+    // Skip non-production roles
+    if (!PRODUCTION_TITLES.has(jobTitleRaw)) continue
 
-    const avg = (fn: (r: CoachingCsvRow) => number) =>
-      empRows.reduce((sum, r) => sum + fn(r), 0) / n
+    const totalHours = num(raw['TOTAL HOURS'])
+    if (totalHours <= 0) continue
 
-    const avgPph = avg((r) => r.pph)
-    const avgGapPct = avg((r) => r.gapPct)
+    const directHours = num(raw['DIRECT HOURS'])
+    const indirectHours = num(raw['INDIRECT HOURS'])
+    const adminHours = num(raw['ADMIN HOURS'])
 
-    const isReturnsClerk = first.jobTitle === 'Returns Clerk'
-    const qualifies = isReturnsClerk
-      ? avgPph < 36
-      : avgPph < 100 || avgGapPct > 10
+    // GAP % is stored as a decimal — convert to percentage
+    const gapPct = num(raw['GAP %']) * 100
 
-    if (!qualifies) continue
-
-    candidates.push({
-      managerName: first.managerName,
-      employeeName: first.employeeName,
-      jobTitle: first.jobTitle,
-      avgPph: Math.round(avgPph * 100) / 100,
-      avgGapPct: Math.round(avgGapPct * 100) / 100,
-      avgDirectPct: Math.round(avg((r) => r.directPct) * 100) / 100,
-      avgIndirectPct: Math.round(avg((r) => r.indirectPct) * 100) / 100,
-      avgAdminPct: Math.round(avg((r) => r.adminPct) * 100) / 100,
-      avgHours: Math.round(avg((r) => r.hours) * 100) / 100,
-      daysInSample: n,
+    rows.push({
+      employeeName: toTitleCase(raw.EMPLOYEE?.trim() ?? ''),
+      managerName: toTitleCase(raw.SUPERVISOR?.trim() ?? ''),
+      jobTitle: toTitleCase(jobTitleRaw),
+      pph: num(raw.PPH),
+      gapPct,
+      directPct: totalHours > 0 ? (directHours / totalHours) * 100 : 0,
+      indirectPct: totalHours > 0 ? (indirectHours / totalHours) * 100 : 0,
+      adminPct: totalHours > 0 ? (adminHours / totalHours) * 100 : 0,
+      totalHours,
     })
   }
 
-  return candidates
+  return rows
 }
 
-// Derive week start/end from the dates in the parsed rows
-export function getWeekBounds(rows: CoachingCsvRow[]): { weekStart: string; weekEnd: string } {
-  const dates = rows.map((r) => r.date).filter(Boolean).sort()
-  return {
-    weekStart: dates[0] ?? '',
-    weekEnd: dates[dates.length - 1] ?? '',
-  }
+// Filter rows against coaching thresholds and return structured candidates.
+// Thresholds:
+//   - Skip anyone with PPH = 0 (all-indirect week — not a production performance issue)
+//   - Returns Clerk: PPH < 36
+//   - All other production roles: PPH < 100 OR gapPct > 10
+export function filterCandidates(rows: ParsedCoachingRow[]): CoachingCandidate[] {
+  return rows
+    .filter((r) => {
+      if (r.pph === 0) return false   // no production work this week
+      if (r.jobTitle === 'Returns Clerk') return r.pph < 36
+      return r.pph < 100 || r.gapPct > 10
+    })
+    .map((r) => ({
+      managerName: r.managerName,
+      employeeName: r.employeeName,
+      jobTitle: r.jobTitle,
+      avgPph: Math.round(r.pph * 100) / 100,
+      avgGapPct: Math.round(r.gapPct * 100) / 100,
+      avgDirectPct: Math.round(r.directPct * 100) / 100,
+      avgIndirectPct: Math.round(r.indirectPct * 100) / 100,
+      avgAdminPct: Math.round(r.adminPct * 100) / 100,
+      avgHours: Math.round(r.totalHours * 100) / 100,
+      daysInSample: 1,
+    }))
 }
