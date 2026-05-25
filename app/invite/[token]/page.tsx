@@ -58,7 +58,10 @@ export default function InvitePage() {
       // Force a new JWT so the updated publicMetadata.role is in the session
       // claims before the middleware checks it on /coaching.
       await session?.reload()
-      setTimeout(() => router.push('/coaching'), 1500)
+      // Hard redirect (not router.push) so the browser sends the refreshed
+      // cookie on a full request — client-side navigation can race ahead of
+      // the updated JWT and hit the domain check before it propagates.
+      setTimeout(() => { window.location.href = '/coaching' }, 1500)
     } catch (e: unknown) {
       setAcceptStatus('error')
       setErrorMsg(e instanceof Error ? e.message : 'Something went wrong')
