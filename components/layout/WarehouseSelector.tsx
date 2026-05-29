@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useWarehouseStore } from '@/lib/stores/warehouse'
+import { useUser } from '@clerk/nextjs'
 
 interface Warehouse {
   id: number
@@ -11,17 +12,20 @@ interface Warehouse {
 }
 
 export function WarehouseSelector() {
+  const { user } = useUser()
+  const isCt = (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
   const { activeWarehouse, setActiveWarehouse } = useWarehouseStore()
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (isCt) return
     fetch('/api/warehouses')
       .then((r) => r.json())
       .then((data: Warehouse[]) => setWarehouses(data))
       .catch(() => {})
-  }, [])
+  }, [isCt])
 
   // Close on outside click
   useEffect(() => {
@@ -33,6 +37,8 @@ export function WarehouseSelector() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  if (isCt) return null
 
   async function selectWarehouse(w: Warehouse) {
     setActiveWarehouse(w)

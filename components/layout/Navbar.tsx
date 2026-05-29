@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { UserButton } from '@clerk/nextjs'
+import { UserButton, useUser } from '@clerk/nextjs'
 import { BarChart3, Clock, Users, TrendingUp, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { ImportModal } from '@/components/shared/ImportModal'
@@ -50,6 +50,8 @@ function ThemeToggle() {
 export function Navbar() {
   const pathname = usePathname()
   const [importOpen, setImportOpen] = useState(false)
+  const { user } = useUser()
+  const isCt = (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
 
   return (
     <>
@@ -62,9 +64,9 @@ export function Navbar() {
               MeetOPS
             </Link>
 
-            {/* Tool navigation */}
+            {/* Tool navigation — CTs only see Coaching */}
             <nav className="flex items-center gap-1 flex-1">
-              {NAV_LINKS.map(({ label, href, icon: Icon }) => {
+              {NAV_LINKS.filter(({ href }) => !isCt || href === '/coaching').map(({ label, href, icon: Icon }) => {
                 const isActive = pathname.startsWith(href)
                 return (
                   <Link
@@ -84,18 +86,20 @@ export function Navbar() {
               })}
             </nav>
 
-            {/* Right side */}
+            {/* Right side — CTs get theme toggle + sign out only */}
             <div className="flex items-center gap-3 shrink-0">
-              <WarehouseSelector />
+              {!isCt && <WarehouseSelector />}
               <ThemeToggle />
-              <button
-                onClick={() => setImportOpen(true)}
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-              >
-                <Upload className="h-4 w-4" />
-                Import
-              </button>
-              <UserButton afterSignOutUrl="/sign-in" />
+              {!isCt && (
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                >
+                  <Upload className="h-4 w-4" />
+                  Import
+                </button>
+              )}
+              <UserButton />
             </div>
           </div>
         </div>
