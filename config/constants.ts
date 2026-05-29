@@ -124,6 +124,26 @@ export const COACHING_CONFIG = {
   MAX_TRAINEES_PER_TRAINER: 3,
 } as const
 
+// Job titles that are eligible for performance coaching.
+// Employees in these roles who are below PPH_COACHING_STANDARD trigger a coaching candidate row.
+// Area Managers, Load Out, and Returns Clerk are excluded — they are not production workers
+// measured by the same PPH standard.
+export const COACHING_ELIGIBLE_ROLES = new Set([
+  'Inventory Processor',
+  'Picker',
+  'Safety Coordinator',
+  'Lot Attendant',
+  'Put Away',
+  'Material Handler',
+])
+
+// PPH below this threshold makes an eligible employee a coaching candidate.
+export const PPH_COACHING_STANDARD = 100
+
+// If indirect hours / total hours > this threshold, the employee is NOT a coaching candidate
+// (they were in an indirect role for most of the week and their low PPH is expected).
+export const MAX_DIRECT_RATIO_FOR_COACHING = 0.80
+
 // ============================================================
 // Job Title → Department mapping
 // Used by shift planner to group employees into plannable units.

@@ -32,8 +32,21 @@ export default clerkMiddleware(async (auth, request) => {
     const user = await client.users.getUser(userId)
 
     // CTs have role='ct' set in publicMetadata during invite acceptance.
-    // They bypass the domain check entirely.
+    // They can only access the coaching page and its API routes.
     const role = (user.publicMetadata as Record<string, unknown>)?.role
+    if (role === 'ct') {
+      const path = request.nextUrl.pathname
+      const allowed =
+        path.startsWith('/coaching') ||
+        path.startsWith('/api/coaching') ||
+        path.startsWith('/sign-in') ||
+        path.startsWith('/sign-up')
+      if (!allowed) {
+        return NextResponse.redirect(new URL('/coaching', request.url))
+      }
+      return NextResponse.next({ request: { headers: requestHeaders } })
+    }
+    // Other roles (manager, ops, gm) bypass domain check
     if (role) {
       return NextResponse.next({ request: { headers: requestHeaders } })
     }
