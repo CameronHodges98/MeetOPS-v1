@@ -124,7 +124,7 @@ export default function InvitePage() {
                 <div className="space-y-3">
                   <p className="text-sm text-center text-muted-foreground">Sign in or create an account to continue:</p>
                   <SignIn
-                    fallbackRedirectUrl={`/invite/${token}`}
+                    forceRedirectUrl={`/invite/${token}`}
                     appearance={{
                       elements: {
                         rootBox: 'w-full',
