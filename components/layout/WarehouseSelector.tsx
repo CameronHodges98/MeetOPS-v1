@@ -12,20 +12,23 @@ interface Warehouse {
 }
 
 export function WarehouseSelector() {
-  const { user } = useUser()
-  const isCt = (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
+  const { user, isLoaded } = useUser()
+  const isCt = isLoaded && (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
   const { activeWarehouse, setActiveWarehouse } = useWarehouseStore()
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (isCt) return
+    // Wait for Clerk to finish loading before deciding whether to fetch.
+    // Without isLoaded, isCt is false on first render and the fetch fires
+    // for CTs before their role is known.
+    if (!isLoaded || isCt) return
     fetch('/api/warehouses')
       .then((r) => r.json())
       .then((data: Warehouse[]) => setWarehouses(data))
       .catch(() => {})
-  }, [isCt])
+  }, [isLoaded, isCt])
 
   // Close on outside click
   useEffect(() => {
@@ -38,7 +41,7 @@ export function WarehouseSelector() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  if (isCt) return null
+  if (!isLoaded || isCt) return null
 
   async function selectWarehouse(w: Warehouse) {
     setActiveWarehouse(w)
