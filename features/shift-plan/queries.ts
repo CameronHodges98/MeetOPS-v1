@@ -131,7 +131,7 @@ export function useUpdateDeptRoster(date: string) {
   const location = useWarehouseStore((s) => s.activeWarehouse?.name ?? 'Mesa')
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { department: string; count: number; shiftSchedule?: ShiftEntry[] | null }) => {
+    mutationFn: async (body: { department: string; count: number; dayType: 'weekday' | 'weekend'; shiftSchedule?: ShiftEntry[] | null }) => {
       const res = await fetch('/api/shift-plan/roster', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

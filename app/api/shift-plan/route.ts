@@ -41,6 +41,11 @@ export async function GET(request: Request) {
     .from(departmentRosters)
     .where(eq(departmentRosters.location, location))
 
+  // Determine day type from the requested date
+  const dayOfWeek = new Date(date + 'T12:00:00').getDay()
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6
+  const dayType: 'weekday' | 'weekend' = isWeekend ? 'weekend' : 'weekday'
+
   const rosterByDept: Record<string, { count: number; shiftSchedule: unknown }> = {}
   for (const row of rosterRows) {
     rosterByDept[row.department] = { count: row.count, shiftSchedule: row.shiftSchedule }
@@ -56,12 +61,28 @@ export async function GET(request: Request) {
     submissions.map((s) => [s.department, s])
   )
 
-  const departments = PRODUCTION_DEPARTMENTS.map((dept) => ({
-    department: dept,
-    scheduledCount: rosterByDept[dept]?.count ?? 0,
-    shiftSchedule: (rosterByDept[dept]?.shiftSchedule as import('@/features/shift-plan/utils').ShiftEntry[] | null) ?? null,
-    submission: submissionByDept[dept] ?? null,
-  }))
+  const departments = PRODUCTION_DEPARTMENTS.map((dept) => {
+    const raw = rosterByDept[dept]?.shiftSchedule
+    // Extract the day-type-specific schedule from { weekday, weekend } structure.
+    // If legacy flat array, treat as weekday.
+    let shiftSchedule: import('@/features/shift-plan/utils').ShiftEntry[] | null = null
+    if (Array.isArray(raw)) {
+      shiftSchedule = dayType === 'weekday' ? (raw as import('@/features/shift-plan/utils').ShiftEntry[]) : null
+    } else if (raw && typeof raw === 'object') {
+      const typed = raw as Record<string, unknown>
+      const arr = typed[dayType]
+      shiftSchedule = Array.isArray(arr) && arr.length > 0
+        ? arr as import('@/features/shift-plan/utils').ShiftEntry[]
+        : null
+    }
+
+    return {
+      department: dept,
+      scheduledCount: rosterByDept[dept]?.count ?? 0,
+      shiftSchedule,
+      submission: submissionByDept[dept] ?? null,
+    }
+  })
 
   return Response.json({ plan, departments })
 }

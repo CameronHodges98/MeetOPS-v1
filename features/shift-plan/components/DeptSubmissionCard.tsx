@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, CheckCircle2, Clock, RotateCcw, Pencil, Check, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Trash2, CheckCircle2, Clock, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { DeptSnapshot, ShiftEntry } from '../utils'
 import type { ExemptEntry } from '@/app/api/shift-plan/submissions/route'
@@ -10,6 +10,7 @@ import { computeEffectiveHeadcount, computeOnSiteHeadcount, getExemptTotal, getE
 interface DeptSubmissionCardProps {
   snap: DeptSnapshot
   planId: number
+  date: string  // "yyyy-MM-dd"
   isPublished: boolean
   onSubmit: (data: {
     planId: number
@@ -19,10 +20,23 @@ interface DeptSubmissionCardProps {
     exemptEntries: ExemptEntry[]
   }) => void
   onReset: (data: { planId: number; department: string }) => void
-  onUpdateRoster: (data: { department: string; count: number; shiftSchedule?: ShiftEntry[] | null }) => void
+  onUpdateRoster: (data: { department: string; count: number; dayType: 'weekday' | 'weekend'; shiftSchedule?: ShiftEntry[] | null }) => void
 }
 
-export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onReset, onUpdateRoster }: DeptSubmissionCardProps) {
+// Fri (5), Sat (6), Sun (0) are weekend; Mon–Thu (1–4) are weekday
+function isWeekendDate(dateStr: string): boolean {
+  const day = new Date(dateStr + 'T12:00:00').getDay()
+  return day === 0 || day === 5 || day === 6
+}
+
+function defaultShifts(): ShiftEntry[] {
+  return [
+    { startTime: '05:00', endTime: '14:00', count: 1 },
+    { startTime: '06:00', endTime: '15:00', count: 1 },
+  ]
+}
+
+export function DeptSubmissionCard({ snap, planId, date, isPublished, onSubmit, onReset, onUpdateRoster }: DeptSubmissionCardProps) {
   const sub = snap.submission
   const [callouts, setCallouts] = useState(sub?.calloutCount ?? 0)
   const [ot, setOt] = useState(sub?.otCount ?? 0)
@@ -31,29 +45,19 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
   )
   const [dirty, setDirty] = useState(false)
 
-  // Roster inline edit state
-  const [editingRoster, setEditingRoster] = useState(false)
-  const [rosterInput, setRosterInput] = useState(snap.scheduledCount)
-  const rosterInputRef = useRef<HTMLInputElement>(null)
+  const weekend = isWeekendDate(date)
 
-  // Shift schedule state
+  // Shift schedule state — seed with 2 default slots when no shifts are saved yet
   const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [scheduleEdits, setScheduleEdits] = useState<ShiftEntry[]>(snap.shiftSchedule ?? [])
-  const [scheduleDirty, setScheduleDirty] = useState(false)
+  const [scheduleEdits, setScheduleEdits] = useState<ShiftEntry[]>(
+    snap.shiftSchedule && snap.shiftSchedule.length > 0 ? snap.shiftSchedule : defaultShifts()
+  )
+  const [scheduleDirty, setScheduleDirty] = useState(
+    !(snap.shiftSchedule && snap.shiftSchedule.length > 0)
+  )
 
-  useEffect(() => {
-    if (editingRoster) rosterInputRef.current?.focus()
-  }, [editingRoster])
-
-  function saveRoster() {
-    onUpdateRoster({ department: snap.department, count: rosterInput, shiftSchedule: scheduleEdits.length > 0 ? scheduleEdits : null })
-    setEditingRoster(false)
-  }
-
-  function cancelRoster() {
-    setRosterInput(snap.scheduledCount)
-    setEditingRoster(false)
-  }
+  // Roster is derived from the sum of all shift counts
+  const rosterCount = scheduleEdits.reduce((s, e) => s + (e.count ?? 0), 0)
 
   function addShift() {
     setScheduleEdits((prev) => [...prev, { startTime: '05:00', endTime: '15:00', count: 1 }])
@@ -72,7 +76,9 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
 
   function saveSchedule() {
     const cleaned = scheduleEdits.filter((e) => e.count > 0)
-    onUpdateRoster({ department: snap.department, count: snap.scheduledCount, shiftSchedule: cleaned.length > 0 ? cleaned : null })
+    const total = cleaned.reduce((s, e) => s + e.count, 0)
+    const dayType = weekend ? 'weekend' : 'weekday'
+    onUpdateRoster({ department: snap.department, count: total, dayType, shiftSchedule: cleaned.length > 0 ? cleaned : null })
     setScheduleEdits(cleaned)
     setScheduleDirty(false)
     setScheduleOpen(false)
@@ -117,6 +123,7 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const previewSnap: DeptSnapshot = {
     ...snap,
+    scheduledCount: rosterCount,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     submission: { ...(sub ?? {} as any), calloutCount: callouts, otCount: ot, exemptEntries: exempts },
   }
@@ -134,41 +141,9 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-bold">{snap.department}</h3>
         <div className="flex items-center gap-2">
-          {/* Roster inline editor */}
-          {editingRoster ? (
-            <div className="flex items-center gap-1">
-              <input
-                ref={rosterInputRef}
-                type="number"
-                min={0}
-                value={rosterInput}
-                onChange={(e) => setRosterInput(Number(e.target.value))}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveRoster(); if (e.key === 'Escape') cancelRoster() }}
-                className="w-14 rounded-md border border-primary bg-background px-2 py-0.5 text-sm font-semibold text-center"
-              />
-              <button onClick={saveRoster} className="text-green-600 hover:text-green-500 transition-colors" title="Save">
-                <Check className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={cancelRoster} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">
-                Roster: <span className="font-semibold text-foreground">{snap.scheduledCount}</span>
-              </span>
-              {!isPublished && (
-                <button
-                  onClick={() => { setRosterInput(snap.scheduledCount); setEditingRoster(true) }}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  title="Update roster"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-          )}
+          <span className="text-xs text-muted-foreground">
+            Roster: <span className="font-semibold text-foreground">{rosterCount}</span>
+          </span>
           {isSubmitted
             ? <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
             : <Clock className="h-4 w-4 text-muted-foreground" />
@@ -184,51 +159,50 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
         >
           {scheduleOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           <span>
-            Shift Schedule
-            {snap.shiftSchedule && snap.shiftSchedule.length > 0
-              ? <span className="ml-1 text-foreground font-medium">({snap.shiftSchedule.length} shift{snap.shiftSchedule.length !== 1 ? 's' : ''})</span>
-              : <span className="ml-1 opacity-60">— not configured</span>
-            }
+            {weekend ? 'Weekend' : 'Weekday'} Shifts
+            <span className="ml-1 text-foreground font-medium">({scheduleEdits.length} shift{scheduleEdits.length !== 1 ? 's' : ''})</span>
           </span>
         </button>
 
         {scheduleOpen && (
           <div className="mt-2 rounded-lg border border-border bg-muted/20 p-3 space-y-2">
             {scheduleEdits.map((e, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <div className="flex flex-col gap-0.5 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="time"
-                      value={e.startTime}
-                      disabled={isPublished}
-                      onChange={(ev) => updateShift(i, { startTime: ev.target.value })}
-                      className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
-                    />
-                    <span className="text-xs text-muted-foreground">–</span>
-                    <input
-                      type="time"
-                      value={e.endTime}
-                      disabled={isPublished}
-                      onChange={(ev) => updateShift(i, { endTime: ev.target.value })}
-                      className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      value={e.count}
-                      disabled={isPublished}
-                      onChange={(ev) => updateShift(i, { count: Number(ev.target.value) })}
-                      className="w-14 rounded-md border border-border bg-background px-2 py-1 text-xs text-center disabled:opacity-50"
-                      title="Headcount for this shift"
-                    />
-                    <span className="text-xs text-muted-foreground">ppl</span>
-                    {!isPublished && (
-                      <button onClick={() => removeShift(i)} className="text-muted-foreground hover:text-red-500 transition-colors ml-auto">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+              <div key={i} className="rounded-md border border-border/60 bg-background px-2.5 py-2 space-y-1.5">
+                {/* Time range row */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="time"
+                    value={e.startTime}
+                    disabled={isPublished}
+                    onChange={(ev) => updateShift(i, { startTime: ev.target.value })}
+                    className="flex-1 min-w-0 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs disabled:opacity-50"
+                  />
+                  <span className="text-xs text-muted-foreground shrink-0">–</span>
+                  <input
+                    type="time"
+                    value={e.endTime}
+                    disabled={isPublished}
+                    onChange={(ev) => updateShift(i, { endTime: ev.target.value })}
+                    className="flex-1 min-w-0 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs disabled:opacity-50"
+                  />
+                </div>
+                {/* Count + delete row */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    value={e.count}
+                    disabled={isPublished}
+                    onChange={(ev) => updateShift(i, { count: Number(ev.target.value) })}
+                    className="w-14 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs text-center disabled:opacity-50"
+                    title="Headcount for this shift"
+                  />
+                  <span className="text-xs text-muted-foreground">people</span>
+                  {!isPublished && (
+                    <button onClick={() => removeShift(i)} className="ml-auto text-muted-foreground hover:text-red-500 transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -345,7 +319,7 @@ export function DeptSubmissionCard({ snap, planId, isPublished, onSubmit, onRese
       <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs mb-3 space-y-1">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">
-            {snap.scheduledCount} scheduled − {callouts} callouts + {ot} OT
+            {rosterCount} scheduled − {callouts} callouts + {ot} OT
             {designatedTotal > 0 && (
               <span className="ml-1 text-muted-foreground/70">
                 ({designatedTotal} designated{indirectTotal > 0 ? `, ${indirectTotal} indirect` : ''})
