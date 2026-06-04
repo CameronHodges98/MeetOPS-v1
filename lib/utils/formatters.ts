@@ -1,4 +1,4 @@
-import type { PerformanceStatus } from './uphCalculator'
+export type PerformanceStatus = 'on_target' | 'watch' | 'needs_attention' | 'insufficient_data'
 
 // ============================================================
 // Number Formatting

@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils/cn'
-import type { PerformanceStatus } from '@/lib/utils/uphCalculator'
+import type { PerformanceStatus } from '@/lib/utils/formatters'
 import { STATUS_DISPLAY } from '@/lib/utils/formatters'
 
 interface MetricCardProps {
