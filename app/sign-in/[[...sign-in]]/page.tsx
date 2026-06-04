@@ -45,7 +45,7 @@ export default function SignInPage() {
         </div>
 
         <p className="text-xs text-zinc-500">
-          Access restricted to @nellisauction.com accounts.
+          Built for Nellis Auction operations teams.
         </p>
       </div>
 
@@ -61,7 +61,7 @@ export default function SignInPage() {
           <div className="space-y-1">
             <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
             <p className="text-sm text-muted-foreground">
-              Sign in with your @nellisauction.com account.
+              Sign in to continue.
             </p>
           </div>
 

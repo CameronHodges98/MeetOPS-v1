@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 }
 
 // Routes that render full-screen with no navbar or page padding
-const FULLSCREEN_ROUTES = ['/sign-in', '/sign-up', '/unauthorized']
+const FULLSCREEN_ROUTES = ['/sign-in', '/sign-up']
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const headersList = await headers()

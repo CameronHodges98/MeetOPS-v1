@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react'
 import { ChevronDown, Check, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useWarehouseStore } from '@/lib/stores/warehouse'
-import { useUser } from '@clerk/nextjs'
 
 interface Warehouse {
   id: number
@@ -12,36 +11,25 @@ interface Warehouse {
 }
 
 export function WarehouseSelector() {
-  const { user, isLoaded } = useUser()
-  const isCt = isLoaded && (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
   const { activeWarehouse, setActiveWarehouse } = useWarehouseStore()
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Wait for Clerk to finish loading before deciding whether to fetch.
-    // Without isLoaded, isCt is false on first render and the fetch fires
-    // for CTs before their role is known.
-    if (!isLoaded || isCt) return
     fetch('/api/warehouses')
       .then((r) => r.json())
       .then((data: Warehouse[]) => setWarehouses(data))
       .catch(() => {})
-  }, [isLoaded, isCt])
+  }, [])
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
-
-  if (!isLoaded || isCt) return null
 
   async function selectWarehouse(w: Warehouse) {
     setActiveWarehouse(w)
