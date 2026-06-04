@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   serial,
   varchar,
   integer,
@@ -12,8 +13,64 @@ import {
 } from 'drizzle-orm/pg-core'
 
 // ============================================================
+// ROLES
+// ============================================================
+
+export const appRoleEnum = pgEnum('app_role', ['root', 'gm', 'ops', 'am', 'ct'])
+
+// ============================================================
+// APP USERS
+// Every authorized user of the platform. Created when an invite
+// is accepted. The source of truth for role-based access control.
+// opsManagerClerkId is set for Area Managers only — points to the
+// Ops Manager they report to.
+// ============================================================
+
+export const appUsers = pgTable(
+  'app_users',
+  {
+    id: serial('id').primaryKey(),
+    clerkId: varchar('clerk_id', { length: 100 }).notNull().unique(),
+    email: varchar('email', { length: 200 }).notNull(),
+    name: varchar('name', { length: 200 }),
+    role: appRoleEnum('role').notNull(),
+    opsManagerClerkId: varchar('ops_manager_clerk_id', { length: 100 }),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    clerkIdIdx: uniqueIndex('app_users_clerk_id_idx').on(table.clerkId),
+    emailIdx: uniqueIndex('app_users_email_idx').on(table.email),
+  })
+)
+
+// ============================================================
+// INVITES
+// One-time sign-up tokens sent by root/GM. Expire after 36 hours.
+// The email is locked — only the invited address can sign up.
+// ============================================================
+
+export const invites = pgTable(
+  'invites',
+  {
+    id: serial('id').primaryKey(),
+    token: varchar('token', { length: 100 }).notNull().unique(),
+    email: varchar('email', { length: 200 }).notNull(),
+    role: appRoleEnum('role').notNull(),
+    createdByClerkId: varchar('created_by_clerk_id', { length: 100 }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    usedByClerkId: varchar('used_by_clerk_id', { length: 100 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenIdx: uniqueIndex('invites_token_idx').on(table.token),
+  })
+)
+
+// ============================================================
 // WAREHOUSES
-// One row per physical facility. Mesa is the active location.
 // ============================================================
 
 export const warehouses = pgTable('warehouses', {
@@ -25,7 +82,6 @@ export const warehouses = pgTable('warehouses', {
 
 // ============================================================
 // USER PREFERENCES
-// Stores each Clerk user's default warehouse selection.
 // ============================================================
 
 export const userPreferences = pgTable('user_preferences', {
@@ -37,30 +93,7 @@ export const userPreferences = pgTable('user_preferences', {
 })
 
 // ============================================================
-// USER PROFILES
-// Extends Clerk users with role (manager, ops, gm).
-// ============================================================
-
-export const userProfiles = pgTable(
-  'user_profiles',
-  {
-    id: serial('id').primaryKey(),
-    clerkId: varchar('clerk_id', { length: 100 }).notNull().unique(),
-    role: varchar('role', { length: 50 }),
-    displayName: varchar('display_name', { length: 100 }),
-    email: varchar('email', { length: 200 }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
-  },
-  (table) => ({
-    clerkIdIdx: uniqueIndex('user_profiles_clerk_id_idx').on(table.clerkId),
-  })
-)
-
-// ============================================================
 // SHIFT PLANS
-// One row per date/location — the container for a day's plan.
-// publishedAt non-null = plan is locked; submissions read-only.
 // ============================================================
 
 export const shiftPlans = pgTable(
@@ -80,17 +113,13 @@ export const shiftPlans = pgTable(
 
 // ============================================================
 // SHIFT PLAN SUBMISSIONS
-// One row per department per day. Supervisors fill in callouts,
-// OT, and exempt/designated employees before the plan is published.
 // ============================================================
 
 export const shiftPlanSubmissions = pgTable(
   'shift_plan_submissions',
   {
     id: serial('id').primaryKey(),
-    shiftPlanId: integer('shift_plan_id')
-      .notNull()
-      .references(() => shiftPlans.id),
+    shiftPlanId: integer('shift_plan_id').notNull().references(() => shiftPlans.id),
     department: varchar('department', { length: 100 }).notNull(),
     calloutCount: integer('callout_count').notNull().default(0),
     otCount: integer('ot_count').notNull().default(0),
@@ -109,17 +138,13 @@ export const shiftPlanSubmissions = pgTable(
 
 // ============================================================
 // FLEX PLAN ENTRIES
-// Labor flex moves the Ops Manager confirms for a given quarter.
-// quarter: 1–4 mapping to the four shift periods.
 // ============================================================
 
 export const flexPlanEntries = pgTable(
   'flex_plan_entries',
   {
     id: serial('id').primaryKey(),
-    shiftPlanId: integer('shift_plan_id')
-      .notNull()
-      .references(() => shiftPlans.id),
+    shiftPlanId: integer('shift_plan_id').notNull().references(() => shiftPlans.id),
     quarter: integer('quarter').notNull(),
     fromDepartment: varchar('from_department', { length: 100 }).notNull(),
     toDepartment: varchar('to_department', { length: 100 }).notNull(),
@@ -135,8 +160,6 @@ export const flexPlanEntries = pgTable(
 
 // ============================================================
 // DEPARTMENT ROSTERS
-// Persistent headcount per department per location.
-// shiftSchedule stores { weekday: ShiftEntry[], weekend: ShiftEntry[] }.
 // ============================================================
 
 export const departmentRosters = pgTable(
@@ -159,12 +182,14 @@ export const departmentRosters = pgTable(
 // INFERRED TYPES
 // ============================================================
 
+export type AppUser = typeof appUsers.$inferSelect
+export type NewAppUser = typeof appUsers.$inferInsert
+export type Invite = typeof invites.$inferSelect
+export type NewInvite = typeof invites.$inferInsert
 export type Warehouse = typeof warehouses.$inferSelect
 export type NewWarehouse = typeof warehouses.$inferInsert
 export type UserPreference = typeof userPreferences.$inferSelect
 export type NewUserPreference = typeof userPreferences.$inferInsert
-export type UserProfile = typeof userProfiles.$inferSelect
-export type NewUserProfile = typeof userProfiles.$inferInsert
 export type ShiftPlan = typeof shiftPlans.$inferSelect
 export type NewShiftPlan = typeof shiftPlans.$inferInsert
 export type ShiftPlanSubmission = typeof shiftPlanSubmissions.$inferSelect

@@ -3,29 +3,29 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { UserButton } from '@clerk/nextjs'
-import { Clock, Users, TrendingUp, GraduationCap, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
+import { UserButton, useUser } from '@clerk/nextjs'
+import { Clock, Users, TrendingUp, GraduationCap, Shield, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { ImportModal } from '@/components/shared/ImportModal'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { WarehouseSelector } from '@/components/layout/WarehouseSelector'
+import { ROUTE_PERMISSIONS, type AppRole } from '@/config/roles'
 
 const NAV_LINKS = [
   { label: 'Shift Plan',  href: '/shift-plan',  icon: Users },
   { label: 'UPH Tracker', href: '/uph-tracker', icon: TrendingUp },
   { label: 'Cycle Time',  href: '/cycle-time',  icon: Clock },
   { label: 'Coaching',    href: '/coaching',    icon: GraduationCap },
+  { label: 'Admin',       href: '/admin',       icon: Shield },
 ] as const
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme()
-
   const options = [
     { value: 'light', icon: Sun },
     { value: 'system', icon: Monitor },
     { value: 'dark', icon: Moon },
   ] as const
-
   return (
     <div className="flex items-center rounded-md border border-border bg-muted p-0.5 gap-0.5">
       {options.map(({ value, icon: Icon }) => (
@@ -50,21 +50,28 @@ function ThemeToggle() {
 export function Navbar() {
   const pathname = usePathname()
   const [importOpen, setImportOpen] = useState(false)
+  const { user } = useUser()
+  const role = (user?.publicMetadata as Record<string, unknown>)?.role as AppRole | undefined
+
+  const visibleLinks = NAV_LINKS.filter(({ href }) => {
+    const allowed = ROUTE_PERMISSIONS[href]
+    if (!allowed) return true
+    if (!role) return false
+    return allowed.includes(role)
+  })
 
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 max-w-screen-2xl">
           <div className="flex h-14 items-center gap-6">
-            {/* Brand */}
             <Link href="/" className="flex items-center gap-2 font-bold text-lg shrink-0">
               <Zap className="h-5 w-5 text-primary" />
               MeetOPS
             </Link>
 
-            {/* Tool navigation */}
             <nav className="flex items-center gap-1 flex-1">
-              {NAV_LINKS.map(({ label, href, icon: Icon }) => {
+              {visibleLinks.map(({ label, href, icon: Icon }) => {
                 const isActive = pathname.startsWith(href)
                 return (
                   <Link
@@ -84,17 +91,18 @@ export function Navbar() {
               })}
             </nav>
 
-            {/* Right side */}
             <div className="flex items-center gap-3 shrink-0">
               <WarehouseSelector />
               <ThemeToggle />
-              <button
-                onClick={() => setImportOpen(true)}
-                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-              >
-                <Upload className="h-4 w-4" />
-                Import
-              </button>
+              {role && ['root', 'gm', 'ops', 'am'].includes(role) && (
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                >
+                  <Upload className="h-4 w-4" />
+                  Import
+                </button>
+              )}
               <UserButton />
             </div>
           </div>
