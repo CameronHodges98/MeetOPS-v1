@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
-import { Clock, Users, TrendingUp, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
+import { Clock, Users, TrendingUp, GraduationCap, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { ImportModal } from '@/components/shared/ImportModal'
 import { useTheme } from '@/components/theme/ThemeProvider'
@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { label: 'Shift Plan',  href: '/shift-plan',  icon: Users },
   { label: 'UPH Tracker', href: '/uph-tracker', icon: TrendingUp },
   { label: 'Cycle Time',  href: '/cycle-time',  icon: Clock },
+  { label: 'Coaching',    href: '/coaching',    icon: GraduationCap },
 ] as const
 
 function ThemeToggle() {
