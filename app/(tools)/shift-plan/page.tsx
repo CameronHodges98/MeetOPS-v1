@@ -9,8 +9,6 @@ import { format, subDays } from 'date-fns'
 import { useShiftPlanStore } from '@/features/shift-plan/store'
 import {
   useShiftPlan,
-  useHistoricalDemand,
-  useHistoricalHourly,
   useFlexEntries,
   useAddFlexEntry,
   useDeleteFlexEntry,
@@ -100,8 +98,6 @@ export default function ShiftPlanPage() {
   const [historicalsOpen, setHistoricalsOpen] = useState(false)
 
   const { data: planData, isLoading: planLoading } = useShiftPlan(selectedDate)
-  const { data: historical = [] } = useHistoricalDemand(selectedDate)
-  const { data: historicalHourly = [] } = useHistoricalHourly(selectedDate)
   const planId = planData?.plan?.id
   const { data: flexEntries = [] } = useFlexEntries(planId)
 
@@ -117,28 +113,18 @@ export default function ShiftPlanPage() {
   const isPublished  = !!planData?.plan?.publishedAt
   const submittedCount = snapshots.filter((s) => !!s.submission?.submittedAt).length
 
-  // Build needed-by-dept map from historical for a given quarter.
-  // Processing has no "needed" target — it's a flex source with no surplus/deficit concept.
-  // Put Away and Material Handling are both derived from Processing effective headcount.
+  // Needed-by-dept: Put Away and MH are derived from flex-adjusted Processing headcount.
+  // All other depts have no automated target yet — rework pending.
   function neededByDept(quarterNum: number): Record<string, number> {
     const map: Record<string, number> = {}
-    for (const row of historical) {
-      // Processing is intentionally excluded — no headcount target applies
-      if (row.quarter === quarterNum && row.department !== 'Processing') {
-        map[row.department] = Number(row.avg_headcount_needed)
-      }
-    }
     const processingSnap = snapshots.find((s) => s.department === 'Processing')
     if (processingSnap) {
-      // Use flex-adjusted Processing effective — matches QuarterCard and QuarterDrawer logic
-      const qFlexes    = flexEntries.filter((f) => f.quarter === quarterNum)
-      const flexIn     = qFlexes.filter((f) => f.toDepartment   === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
-      const flexOut    = qFlexes.filter((f) => f.fromDepartment === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
-      const processingAdjEff = computeEffectiveHeadcount(processingSnap) + flexIn - flexOut
-      map['Put Away'] = Math.ceil(
-        (processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH
-      )
-      map['Material Handling'] = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
+      const qFlexes  = flexEntries.filter((f) => f.quarter === quarterNum)
+      const flexIn   = qFlexes.filter((f) => f.toDepartment   === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
+      const flexOut  = qFlexes.filter((f) => f.fromDepartment === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
+      const adjEff   = computeEffectiveHeadcount(processingSnap) + flexIn - flexOut
+      map['Put Away']          = Math.ceil((adjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
+      map['Material Handling'] = Math.ceil(adjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
     }
     return map
   }
@@ -231,7 +217,6 @@ export default function ShiftPlanPage() {
                   key={q.quarter}
                   quarter={q}
                   snapshots={snapshots}
-                  historicalRows={historical}
                   confirmedFlexes={flexEntries}
                   recommendedFlexes={qRecs}
                   vtoRecommendations={qVtoRecs}
@@ -298,8 +283,6 @@ export default function ShiftPlanPage() {
         <QuarterDrawer
           quarterNum={drawerQuarter.quarter}
           snapshots={snapshots}
-          historicalRows={historical}
-          historicalHourlyRows={historicalHourly}
           confirmedFlexes={flexEntries}
           recommendedFlexes={drawerRecs}
           vtoRecommendations={drawerVtoRecs}

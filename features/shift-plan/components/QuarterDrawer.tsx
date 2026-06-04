@@ -3,11 +3,10 @@
 import { X, Plus, Trash2, ArrowRight, Clock } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
-import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG, DEPT_DEFAULT_UPH } from '@/config/constants'
+import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
 import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
-import type { HistoricalRow, HistoricalHourRow } from '../queries'
-import { computeQuarterEffective, computeHourEffective, computeGap, gapStatus, gapLabel, isHourPartial } from '../utils'
+import { computeQuarterEffective, computeGap, gapStatus, gapLabel } from '../utils'
 
 const HOUR_LABELS: Record<number, string> = {
   5: '5 AM', 6: '6 AM', 7: '7 AM', 8: '8 AM', 9: '9 AM', 10: '10 AM',
@@ -24,8 +23,6 @@ const GAP_COLORS = {
 interface QuarterDrawerProps {
   quarterNum: number
   snapshots: DeptSnapshot[]
-  historicalRows: HistoricalRow[]
-  historicalHourlyRows: HistoricalHourRow[]
   confirmedFlexes: FlexPlanEntry[]
   recommendedFlexes: RecommendedFlex[]
   vtoRecommendations: VtoRecommendation[]
@@ -38,8 +35,6 @@ interface QuarterDrawerProps {
 export function QuarterDrawer({
   quarterNum,
   snapshots,
-  historicalRows,
-  historicalHourlyRows,
   confirmedFlexes,
   recommendedFlexes,
   vtoRecommendations,
@@ -49,9 +44,6 @@ export function QuarterDrawer({
   onClose,
 }: QuarterDrawerProps) {
   const quarter = SHIFT_QUARTERS.find((q) => q.quarter === quarterNum)!
-  // Historical rows still used for headcount-needed per dept (gap analysis)
-  const CAPACITY_EST_DEPTS = new Set(['Processing', 'Returns'])
-  const qHistorical = historicalRows.filter((r) => r.quarter === quarterNum && !CAPACITY_EST_DEPTS.has(r.department))
   const qFlexes = confirmedFlexes.filter((f) => f.quarter === quarterNum)
 
   const [addingFlex, setAddingFlex] = useState(false)
@@ -77,34 +69,18 @@ export function QuarterDrawer({
 
   // Per-dept rows for the summary table
   const deptRows = snapshots.map((snap) => {
-    const hist         = qHistorical.find((r) => r.department === snap.department)
-    const baseEff      = computeQuarterEffective(snap, quarter.hours)
-    const effective    = baseEff + flexInFor(snap.department) - flexOutFor(snap.department)
-    const isProcessing = snap.department === 'Processing'
-    const isReturns    = snap.department === 'Returns'
-    const isCapacityEst = isProcessing || isReturns
+    const baseEff   = computeQuarterEffective(snap, quarter.hours)
+    const effective = baseEff + flexInFor(snap.department) - flexOutFor(snap.department)
 
-    // Needed is derived for Processing-linked depts; raw historical for everything else
     let needed = 0
     if (snap.department === 'Put Away') {
       needed = Math.ceil((processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
     } else if (snap.department === 'Material Handling') {
       needed = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
-    } else if (!isCapacityEst) {
-      needed = hist ? Number(hist.avg_headcount_needed) : 0
     }
 
     const gap = computeGap(effective, needed)
-
-    // Capacity estimate: what current headcount × UPH should produce this quarter
-    const uph = DEPT_DEFAULT_UPH[snap.department]
-    const actions = uph
-      ? Math.round(effective * uph * quarter.hours.length * SHIFT_CONFIG.UTILIZATION_FACTOR)
-      : 0
-    // Historical average for comparison (excluded for Processing/Returns — capacity est only)
-    const histActions = hist ? Number(hist.avg_total_actions) : 0
-
-    return { dept: snap.department, effective, needed, gap, actions, histActions, isCapacityEst: !!uph, status: gapStatus(gap) }
+    return { dept: snap.department, effective, needed, gap, status: gapStatus(gap) }
   })
 
   return (
@@ -147,7 +123,6 @@ export function QuarterDrawer({
                     <th className="px-3 py-2 text-right font-medium">Assigned</th>
                     <th className="px-3 py-2 text-right font-medium">Needed</th>
                     <th className="px-3 py-2 text-right font-medium">Gap</th>
-                    <th className="px-3 py-2 text-right font-medium">Est. / Hist.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,79 +136,10 @@ export function QuarterDrawer({
                       <td className={cn('px-3 py-2 text-right tabular-nums font-semibold', GAP_COLORS[r.status])}>
                         {r.needed > 0 ? gapLabel(r.gap) : '—'}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        <div className="flex flex-col items-end gap-0.5">
-                          {r.actions > 0
-                            ? <span className="text-foreground font-medium" title="Estimated capacity: headcount × UPH × hours × 85%">
-                                ~{r.actions.toLocaleString()}
-                              </span>
-                            : <span className="text-muted-foreground">—</span>
-                          }
-                          {r.histActions > 0
-                            ? <span className="text-xs text-muted-foreground/70">{r.histActions.toLocaleString()} hist.</span>
-                            : null
-                          }
-                        </div>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          </section>
-
-          {/* ── Hour-by-hour breakdown ── */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              Hour-by-Hour (Predicted)
-            </h3>
-            <div className="space-y-1.5">
-              {quarter.hours.map((h) => {
-                const label = HOUR_LABELS[h]
-                // Per-hour capacity + historical average per dept
-                const hourRows = snapshots
-                  .filter((s) => DEPT_DEFAULT_UPH[s.department] != null)
-                  .map((s) => {
-                    const uph = DEPT_DEFAULT_UPH[s.department]
-                    const eff = computeHourEffective(s, h)
-                    const cap = Math.round(eff * uph * SHIFT_CONFIG.UTILIZATION_FACTOR)
-                    const partial = s.shiftSchedule && s.shiftSchedule.length > 0 ? isHourPartial(s.shiftSchedule, h) : false
-                    const histRow = historicalHourlyRows.find(
-                      (r) => r.hour === h && r.department === s.department
-                    )
-                    const hist = histRow ? Number(histRow.avg_total_actions) : 0
-                    return { dept: s.department, cap, hist, partial }
-                  })
-                  .filter((r) => r.cap > 0 || r.hist > 0)
-
-                const totalCap  = hourRows.reduce((s, r) => s + r.cap, 0)
-                const totalHist = hourRows.reduce((s, r) => s + r.hist, 0)
-
-                return (
-                  <div key={h} className="rounded-lg border border-border px-3 py-2">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs font-semibold">{label}</span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {totalCap > 0
-                          ? <>~{totalCap.toLocaleString()} est.{totalHist > 0 && <span className="opacity-60"> · {totalHist.toLocaleString()} hist.</span>}</>
-                          : 'No headcount'}
-                      </span>
-                    </div>
-                    {hourRows.length > 0 && (
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                        {hourRows.map((r) => (
-                          <span key={r.dept} className="text-xs text-muted-foreground">
-                            {r.dept}:{' '}
-                            <span className="text-foreground font-medium">~{r.cap.toLocaleString()}</span>
-                            {r.partial && <span className="text-amber-500 dark:text-amber-400"> (partial)</span>}
-                            {r.hist > 0 && <span className="opacity-60">/{r.hist.toLocaleString()}</span>}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
             </div>
           </section>
 
