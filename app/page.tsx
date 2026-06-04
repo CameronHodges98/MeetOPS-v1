@@ -1,5 +1,10 @@
+'use client'
+
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { Clock, Users, TrendingUp, GraduationCap, ArrowRight } from 'lucide-react'
+import { useUser } from '@clerk/nextjs'
+import { ROUTE_PERMISSIONS, type AppRole } from '@/config/roles'
 
 const TOOLS = [
   {
@@ -45,6 +50,22 @@ const TOOLS = [
 ] as const
 
 export default function HubPage() {
+  const { user, isLoaded, isSignedIn } = useUser()
+  const role = (user?.publicMetadata as Record<string, unknown>)?.role as AppRole | undefined
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn && !role) {
+      user?.reload()
+    }
+  }, [isLoaded, isSignedIn, role, user])
+
+  const visibleTools = TOOLS.filter(({ href }) => {
+    const allowed = ROUTE_PERMISSIONS[href]
+    if (!allowed) return true
+    if (!role) return false
+    return allowed.includes(role)
+  })
+
   return (
     <div className="space-y-8">
       <div>
@@ -55,7 +76,7 @@ export default function HubPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {TOOLS.map((tool) => {
+        {visibleTools.map((tool) => {
           const Icon = tool.icon
           return (
             <Link

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton, useUser } from '@clerk/nextjs'
@@ -50,8 +50,16 @@ function ThemeToggle() {
 export function Navbar() {
   const pathname = usePathname()
   const [importOpen, setImportOpen] = useState(false)
-  const { user } = useUser()
+  const { user, isLoaded, isSignedIn } = useUser()
   const role = (user?.publicMetadata as Record<string, unknown>)?.role as AppRole | undefined
+
+  // After invite sign-up, publicMetadata may not be in the session token yet.
+  // Force a reload once so the role propagates without requiring a manual refresh.
+  useEffect(() => {
+    if (isLoaded && isSignedIn && !role) {
+      user?.reload()
+    }
+  }, [isLoaded, isSignedIn, role, user])
 
   const visibleLinks = NAV_LINKS.filter(({ href }) => {
     const allowed = ROUTE_PERMISSIONS[href]
