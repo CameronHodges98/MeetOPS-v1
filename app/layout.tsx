@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     default: 'MeetOPS',
     template: '%s | MeetOPS',
   },
-  description: 'Operations management suite — staffing, UPH tracking, cycle time, and coaching',
+  description: 'Operations management suite — staffing, UPH tracking, and cycle time',
 }
 
 // Routes that render full-screen with no navbar or page padding

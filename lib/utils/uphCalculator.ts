@@ -92,7 +92,7 @@ export type PerformanceStatus = 'on_target' | 'watch' | 'needs_attention' | 'ins
 
 /**
  * Maps a PPH value against standard thresholds to a status label.
- * Status drives badge colors and coaching trigger logic throughout the app.
+ * Status drives badge colors throughout the app.
  */
 export function getPerformanceStatus(
   actualPPH: number,
@@ -110,20 +110,6 @@ export function getPerformanceStatus(
   if (percent >= PERFORMANCE_THRESHOLDS.ON_TARGET_PERCENT) return 'on_target'
   if (percent >= PERFORMANCE_THRESHOLDS.WATCH_PERCENT) return 'watch'
   return 'needs_attention'
-}
-
-/**
- * Returns true if this employee's performance should trigger a coaching suggestion.
- */
-export function shouldTriggerCoaching(
-  actualPPH: number,
-  standardPPH: number,
-  hoursWorked: number
-): boolean {
-  if (hoursWorked < PERFORMANCE_THRESHOLDS.MIN_HOURS_FOR_PPH) return false
-  if (standardPPH <= 0) return false
-  const percent = (actualPPH / standardPPH) * 100
-  return percent < PERFORMANCE_THRESHOLDS.COACHING_TRIGGER_PERCENT
 }
 
 // ============================================================

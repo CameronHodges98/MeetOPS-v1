@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { BarChart3, Clock, Users, TrendingUp, ArrowRight } from 'lucide-react'
+import { Clock, Users, TrendingUp, ArrowRight } from 'lucide-react'
 
 const TOOLS = [
   {
@@ -24,23 +24,13 @@ const TOOLS = [
   },
   {
     title: 'Cycle Time',
-    description: 'Identify per-employee action bottlenecks using consecutive same-action timestamps. Data-driven coaching points.',
+    description: 'Identify per-employee action bottlenecks using consecutive same-action timestamps.',
     href: '/cycle-time',
     icon: Clock,
     iconColor: 'text-amber-600 dark:text-amber-400',
     iconBg: 'bg-amber-100 dark:bg-amber-900/40',
     cardBg: 'bg-amber-50 dark:bg-amber-950/30',
     border: 'border-amber-200 dark:border-amber-800',
-  },
-  {
-    title: 'Coaching',
-    description: 'Assign trainers, track coaching sessions, and manage performance improvement workflows end-to-end.',
-    href: '/coaching',
-    icon: BarChart3,
-    iconColor: 'text-purple-600 dark:text-purple-400',
-    iconBg: 'bg-purple-100 dark:bg-purple-900/40',
-    cardBg: 'bg-purple-50 dark:bg-purple-950/30',
-    border: 'border-purple-200 dark:border-purple-800',
   },
 ] as const
 

@@ -3,18 +3,17 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { UserButton, useUser } from '@clerk/nextjs'
-import { BarChart3, Clock, Users, TrendingUp, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
+import { UserButton } from '@clerk/nextjs'
+import { Clock, Users, TrendingUp, Zap, Upload, Sun, Moon, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { ImportModal } from '@/components/shared/ImportModal'
 import { useTheme } from '@/components/theme/ThemeProvider'
 import { WarehouseSelector } from '@/components/layout/WarehouseSelector'
 
 const NAV_LINKS = [
-  { label: 'Shift Plan',   href: '/shift-plan',   icon: Users },
-  { label: 'UPH Tracker',  href: '/uph-tracker',  icon: TrendingUp },
-  { label: 'Cycle Time',   href: '/cycle-time',   icon: Clock },
-  { label: 'Coaching',     href: '/coaching',     icon: BarChart3 },
+  { label: 'Shift Plan',  href: '/shift-plan',  icon: Users },
+  { label: 'UPH Tracker', href: '/uph-tracker', icon: TrendingUp },
+  { label: 'Cycle Time',  href: '/cycle-time',  icon: Clock },
 ] as const
 
 function ThemeToggle() {
@@ -50,8 +49,6 @@ function ThemeToggle() {
 export function Navbar() {
   const pathname = usePathname()
   const [importOpen, setImportOpen] = useState(false)
-  const { user } = useUser()
-  const isCt = (user?.publicMetadata as Record<string, unknown>)?.role === 'ct'
 
   return (
     <>
@@ -64,9 +61,9 @@ export function Navbar() {
               MeetOPS
             </Link>
 
-            {/* Tool navigation — CTs only see Coaching */}
+            {/* Tool navigation */}
             <nav className="flex items-center gap-1 flex-1">
-              {NAV_LINKS.filter(({ href }) => !isCt || href === '/coaching').map(({ label, href, icon: Icon }) => {
+              {NAV_LINKS.map(({ label, href, icon: Icon }) => {
                 const isActive = pathname.startsWith(href)
                 return (
                   <Link
@@ -86,19 +83,17 @@ export function Navbar() {
               })}
             </nav>
 
-            {/* Right side — CTs get theme toggle + sign out only */}
+            {/* Right side */}
             <div className="flex items-center gap-3 shrink-0">
-              {!isCt && <WarehouseSelector />}
+              <WarehouseSelector />
               <ThemeToggle />
-              {!isCt && (
-                <button
-                  onClick={() => setImportOpen(true)}
-                  className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-                >
-                  <Upload className="h-4 w-4" />
-                  Import
-                </button>
-              )}
+              <button
+                onClick={() => setImportOpen(true)}
+                className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                <Upload className="h-4 w-4" />
+                Import
+              </button>
               <UserButton />
             </div>
           </div>

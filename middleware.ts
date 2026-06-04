@@ -8,52 +8,29 @@ const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',
   '/unauthorized',
-  '/invite(.*)',                      // CT invite acceptance page
-  '/api/coaching/invites/(.*)',       // token validation — no auth needed to check if a link is valid
 ])
 
 export default clerkMiddleware(async (auth, request) => {
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-pathname', request.nextUrl.pathname)
 
-  // Let public routes through immediately
   if (isPublicRoute(request)) {
     return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
-  // Require authentication for all other routes
   await auth.protect()
 
-  // sessionClaims is decoded from the Clerk session token and includes
-  // publicMetadata without an API call. This is safe in Clerk v6 because
-  // session.reload() is called after invite acceptance to refresh the token.
   const { userId, sessionClaims } = await auth()
   if (!userId) return NextResponse.next({ request: { headers: requestHeaders } })
 
   const role = (sessionClaims?.publicMetadata as Record<string, unknown>)?.role as string | undefined
 
-  // CTs can only access coaching routes
-  if (role === 'ct') {
-    const path = request.nextUrl.pathname
-    const allowed =
-      path.startsWith('/coaching') ||
-      path.startsWith('/api/coaching') ||
-      path.startsWith('/sign-in') ||
-      path.startsWith('/sign-up')
-    if (!allowed) {
-      return NextResponse.redirect(new URL('/coaching', request.url))
-    }
-    return NextResponse.next({ request: { headers: requestHeaders } })
-  }
-
-  // Other named roles (manager, ops, gm) bypass domain check
+  // Named roles (manager, ops, gm) bypass domain check
   if (role) {
     return NextResponse.next({ request: { headers: requestHeaders } })
   }
 
-  // No role set — must have a @nellisauction.com email.
-  // Only now do we call the Clerk API (once per user until they get a role assigned).
-  // Wrapped in try-catch so a Clerk API failure never turns into a 404.
+  // No role set — must have a @nellisauction.com email
   try {
     const client = await clerkClient()
     const user = await client.users.getUser(userId)
@@ -62,8 +39,7 @@ export default clerkMiddleware(async (auth, request) => {
       return NextResponse.redirect(new URL('/unauthorized', request.url))
     }
   } catch {
-    // If Clerk API is unavailable, fail open for authenticated users.
-    // A Clerk outage should not lock out legitimate managers.
+    // If Clerk API is unavailable, fail open for authenticated users
   }
 
   return NextResponse.next({ request: { headers: requestHeaders } })

@@ -218,6 +218,7 @@ export default function ShiftPlanPage() {
                       key={snap.department}
                       snap={snap}
                       planId={planId!}
+                      date={selectedDate}
                       isPublished={isPublished}
                       onSubmit={(data) => submitDept.mutate(data)}
                       onReset={(data) => resetDept.mutate(data)}
