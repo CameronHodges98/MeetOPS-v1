@@ -13,9 +13,9 @@ import { ROUTE_PERMISSIONS, type AppRole } from '@/config/roles'
 
 const NAV_LINKS = [
   { label: 'Shift Plan',  href: '/shift-plan',  icon: Users },
-  { label: 'UPH Tracker', href: '/uph-tracker', icon: TrendingUp },
-  { label: 'Cycle Time',  href: '/cycle-time',  icon: Clock },
   { label: 'Coaching',    href: '/coaching',    icon: GraduationCap },
+  { label: 'Cycle Time',  href: '/cycle-time',  icon: Clock },
+  { label: 'UPH Tracker', href: '/uph-tracker', icon: TrendingUp },
   { label: 'Admin',       href: '/admin',       icon: Shield },
 ] as const
 
