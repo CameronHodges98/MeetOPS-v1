@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { HelpButton, HelpModal } from '@/components/shared/HelpModal'
 import type { HelpSection } from '@/components/shared/HelpModal'
-import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG } from '@/config/constants'
+import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS } from '@/config/constants'
 import { format, subDays } from 'date-fns'
 import { useShiftPlanStore } from '@/features/shift-plan/store'
 import {
@@ -18,7 +18,7 @@ import {
   useUnpublishPlan,
   useUpdateDeptRoster,
 } from '@/features/shift-plan/queries'
-import { computeEffectiveHeadcount, computeRecommendedFlexes, computeVtoRecommendations } from '@/features/shift-plan/utils'
+import { computeEffectiveHeadcount } from '@/features/shift-plan/utils'
 import { QuarterCard } from '@/features/shift-plan/components/QuarterCard'
 import { QuarterDrawer } from '@/features/shift-plan/components/QuarterDrawer'
 import { DeptSubmissionCard } from '@/features/shift-plan/components/DeptSubmissionCard'
@@ -113,30 +113,9 @@ export default function ShiftPlanPage() {
   const isPublished  = !!planData?.plan?.publishedAt
   const submittedCount = snapshots.filter((s) => !!s.submission?.submittedAt).length
 
-  // Needed-by-dept: Put Away and MH are derived from flex-adjusted Processing headcount.
-  // All other depts have no automated target yet — rework pending.
-  function neededByDept(quarterNum: number): Record<string, number> {
-    const map: Record<string, number> = {}
-    const processingSnap = snapshots.find((s) => s.department === 'Processing')
-    if (processingSnap) {
-      const qFlexes  = flexEntries.filter((f) => f.quarter === quarterNum)
-      const flexIn   = qFlexes.filter((f) => f.toDepartment   === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
-      const flexOut  = qFlexes.filter((f) => f.fromDepartment === 'Processing').reduce((s, f) => s + f.headcountMoved, 0)
-      const adjEff   = computeEffectiveHeadcount(processingSnap) + flexIn - flexOut
-      map['Put Away']          = Math.ceil((adjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
-      map['Material Handling'] = Math.ceil(adjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
-    }
-    return map
-  }
-
-  // Drawer quarter data
   const drawerQuarter = selectedQuarter
     ? SHIFT_QUARTERS.find((q) => q.quarter === selectedQuarter) ?? null
     : null
-
-  const drawerNeeded   = selectedQuarter ? neededByDept(selectedQuarter) : {}
-  const drawerRecs     = selectedQuarter ? computeRecommendedFlexes(snapshots, drawerNeeded) : []
-  const drawerVtoRecs  = selectedQuarter ? computeVtoRecommendations(snapshots, drawerNeeded, selectedQuarter) : []
 
   return (
     <div className="space-y-6">
@@ -208,25 +187,18 @@ export default function ShiftPlanPage() {
         <>
           {/* ── Quarter overview cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {SHIFT_QUARTERS.map((q) => {
-              const qNeeded = neededByDept(q.quarter)
-              const qRecs    = computeRecommendedFlexes(snapshots, qNeeded)
-              const qVtoRecs = computeVtoRecommendations(snapshots, qNeeded, q.quarter)
-              return (
-                <QuarterCard
-                  key={q.quarter}
-                  quarter={q}
-                  snapshots={snapshots}
-                  confirmedFlexes={flexEntries}
-                  recommendedFlexes={qRecs}
-                  vtoRecommendations={qVtoRecs}
-                  submittedCount={submittedCount}
-                  totalDepts={PRODUCTION_DEPARTMENTS.length}
-                  isPublished={isPublished}
-                  onClick={() => setSelectedQuarter(q.quarter as ShiftQuarter)}
-                />
-              )
-            })}
+            {SHIFT_QUARTERS.map((q) => (
+              <QuarterCard
+                key={q.quarter}
+                quarter={q}
+                snapshots={snapshots}
+                confirmedFlexes={flexEntries}
+                submittedCount={submittedCount}
+                totalDepts={PRODUCTION_DEPARTMENTS.length}
+                isPublished={isPublished}
+                onClick={() => setSelectedQuarter(q.quarter as ShiftQuarter)}
+              />
+            ))}
           </div>
 
           {/* ── AM submission cards ── */}
@@ -284,8 +256,6 @@ export default function ShiftPlanPage() {
           quarterNum={drawerQuarter.quarter}
           snapshots={snapshots}
           confirmedFlexes={flexEntries}
-          recommendedFlexes={drawerRecs}
-          vtoRecommendations={drawerVtoRecs}
           isPublished={isPublished}
           onAddFlex={(entry) => addFlex.mutate(entry)}
           onDeleteFlex={(id) => deleteFlex.mutate(id)}

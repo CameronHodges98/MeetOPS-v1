@@ -1,12 +1,12 @@
 'use client'
 
-import { X, Plus, Trash2, ArrowRight, Clock } from 'lucide-react'
+import { X, Plus, Trash2, ArrowRight } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
-import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS, SHIFT_CONFIG } from '@/config/constants'
+import { SHIFT_QUARTERS, PRODUCTION_DEPARTMENTS } from '@/config/constants'
 import type { FlexPlanEntry } from '@/lib/db/schema'
-import type { DeptSnapshot, RecommendedFlex, VtoRecommendation } from '../utils'
-import { computeQuarterEffective, computeGap, gapStatus, gapLabel } from '../utils'
+import type { DeptSnapshot } from '../utils'
+import { computeQuarterEffective } from '../utils'
 
 const HOUR_LABELS: Record<number, string> = {
   5: '5 AM', 6: '6 AM', 7: '7 AM', 8: '8 AM', 9: '9 AM', 10: '10 AM',
@@ -14,18 +14,10 @@ const HOUR_LABELS: Record<number, string> = {
   16: '4 PM', 17: '5 PM', 18: '6 PM',
 }
 
-const GAP_COLORS = {
-  green: 'text-green-600 dark:text-green-400',
-  amber: 'text-amber-600 dark:text-amber-400',
-  red:   'text-red-600 dark:text-red-400',
-}
-
 interface QuarterDrawerProps {
   quarterNum: number
   snapshots: DeptSnapshot[]
   confirmedFlexes: FlexPlanEntry[]
-  recommendedFlexes: RecommendedFlex[]
-  vtoRecommendations: VtoRecommendation[]
   isPublished: boolean
   onAddFlex: (entry: { quarter: number; fromDepartment: string; toDepartment: string; headcountMoved: number }) => void
   onDeleteFlex: (id: number) => void
@@ -36,8 +28,6 @@ export function QuarterDrawer({
   quarterNum,
   snapshots,
   confirmedFlexes,
-  recommendedFlexes,
-  vtoRecommendations,
   isPublished,
   onAddFlex,
   onDeleteFlex,
@@ -62,26 +52,10 @@ export function QuarterDrawer({
   const flexInFor  = (dept: string) => qFlexes.filter((f) => f.toDepartment   === dept).reduce((s, f) => s + f.headcountMoved, 0)
   const flexOutFor = (dept: string) => qFlexes.filter((f) => f.fromDepartment === dept).reduce((s, f) => s + f.headcountMoved, 0)
 
-  // Processing effective after flex moves out — drives Put Away and MH needed
-  const processingSnap    = snapshots.find((s) => s.department === 'Processing')
-  const processingBaseEff = processingSnap ? computeQuarterEffective(processingSnap, quarter.hours) : 0
-  const processingAdjEff  = processingBaseEff + flexInFor('Processing') - flexOutFor('Processing')
-
-  // Per-dept rows for the summary table
-  const deptRows = snapshots.map((snap) => {
-    const baseEff   = computeQuarterEffective(snap, quarter.hours)
-    const effective = baseEff + flexInFor(snap.department) - flexOutFor(snap.department)
-
-    let needed = 0
-    if (snap.department === 'Put Away') {
-      needed = Math.ceil((processingAdjEff * SHIFT_CONFIG.PROCESSING_DEFAULT_UPH) / SHIFT_CONFIG.PUTAWAY_DEFAULT_UPH)
-    } else if (snap.department === 'Material Handling') {
-      needed = Math.ceil(processingAdjEff / SHIFT_CONFIG.MH_PROCESSORS_RATIO)
-    }
-
-    const gap = computeGap(effective, needed)
-    return { dept: snap.department, effective, needed, gap, status: gapStatus(gap) }
-  })
+  const deptRows = snapshots.map((snap) => ({
+    dept:      snap.department,
+    effective: computeQuarterEffective(snap, quarter.hours) + flexInFor(snap.department) - flexOutFor(snap.department),
+  }))
 
   return (
     <>
@@ -121,8 +95,6 @@ export function QuarterDrawer({
                   <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
                     <th className="px-3 py-2 text-left font-medium">Department</th>
                     <th className="px-3 py-2 text-right font-medium">Assigned</th>
-                    <th className="px-3 py-2 text-right font-medium">Needed</th>
-                    <th className="px-3 py-2 text-right font-medium">Gap</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -130,46 +102,12 @@ export function QuarterDrawer({
                     <tr key={r.dept} className={cn('border-b last:border-0 border-border', i % 2 === 0 ? '' : 'bg-muted/20')}>
                       <td className="px-3 py-2 font-medium">{r.dept}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.effective}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                        {r.needed > 0 ? r.needed : '—'}
-                      </td>
-                      <td className={cn('px-3 py-2 text-right tabular-nums font-semibold', GAP_COLORS[r.status])}>
-                        {r.needed > 0 ? gapLabel(r.gap) : '—'}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </section>
-
-          {/* ── VTO recommendations (Q4 only) ── */}
-          {vtoRecommendations.length > 0 && (
-            <section>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                VTO Eligible
-              </h3>
-              <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 p-3 space-y-1.5">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">
-                    Surplus headcount — consider offering VTO
-                  </p>
-                </div>
-                {vtoRecommendations.map((r) => (
-                  <div key={r.department} className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-400">
-                    <span>{r.department}</span>
-                    <span className="font-semibold tabular-nums">
-                      {r.headcountEligible} eligible
-                    </span>
-                  </div>
-                ))}
-                <p className="text-xs text-blue-600/70 dark:text-blue-500 pt-1">
-                  Manager discretion — offer VTO to willing associates.
-                </p>
-              </div>
-            </section>
-          )}
 
           {/* ── Flex plan ── */}
           <section>
@@ -187,21 +125,6 @@ export function QuarterDrawer({
                 </button>
               )}
             </div>
-
-            {/* Recommendations */}
-            {recommendedFlexes.length > 0 && qFlexes.length === 0 && (
-              <div className="mb-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
-                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
-                  Recommended moves
-                </p>
-                {recommendedFlexes.map((r, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
-                    <ArrowRight className="h-3 w-3 shrink-0" />
-                    +{r.headcountMoved} {r.fromDepartment} → {r.toDepartment}
-                  </div>
-                ))}
-              </div>
-            )}
 
             {/* Confirmed flexes */}
             <div className="space-y-2">
