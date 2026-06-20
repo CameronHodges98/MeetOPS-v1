@@ -38,6 +38,19 @@ export const PERFORMANCE_THRESHOLDS = {
 } as const
 
 // ============================================================
+// Coaching Thresholds
+// Drives auto-population of the coaching board from weekly uploads.
+//   directPct >= DIRECT_MIN AND (pph < PPH_MAX OR gapPct > GAP_MAX)
+// ============================================================
+
+export const COACHING_THRESHOLDS = {
+  DIRECT_MIN: 40,
+  PPH_MAX: 100,
+  GAP_MAX: 10,
+  CLEARED_WEEKS_RESET: 4,
+} as const
+
+// ============================================================
 // Cycle Time Thresholds
 // Used by the cycle time computation to decide what gets flagged.
 // ratio = actualSeconds / standardSeconds

@@ -21,22 +21,58 @@ import {
 export const appRoleEnum = pgEnum('app_role', ['root', 'gm', 'ops', 'am', 'ct'])
 
 // ============================================================
-// COACHING STATUS
+// COACHING — ESCALATION STAGE
+// The employee's position on the disciplinary board.
+// roster = in the tray, not yet formally coached.
+// c1/c2 = 1st and 2nd coaching conversations.
+// k1/k2 = 1st and 2nd written corrective actions.
+// final  = HR / termination review.
+// ============================================================
+
+export const escalationStageEnum = pgEnum('escalation_stage', [
+  'roster', 'c1', 'c2', 'k1', 'k2', 'final',
+])
+
+// ============================================================
+// COACHING — CARD STATUS
+// Visual state of an employee's card within their current stage.
+// in_progress = yellow, completed = green, exempt = light red.
+// ============================================================
+
+export const cardStatusEnum = pgEnum('card_status', [
+  'in_progress', 'completed', 'exempt',
+])
+
+// ============================================================
+// COACHING — APPROVAL TYPE
+// What kind of action is waiting for OM/GM sign-off.
+// ============================================================
+
+export const approvalTypeEnum = pgEnum('approval_type', [
+  'auto_advance', 'manual_move', 'exempt',
+])
+
+// ============================================================
+// COACHING — APPROVAL STATUS
+// ============================================================
+
+export const approvalStatusEnum = pgEnum('approval_status', [
+  'pending', 'approved', 'denied',
+])
+
+// ============================================================
+// COACHING — SESSION STATUS (within the detail drawer)
+// Lifecycle of a single CT-assigned coaching session.
 // unassigned → assigned → in_coaching → review → complete
 // ============================================================
 
 export const coachingStatusEnum = pgEnum('coaching_status', [
-  'unassigned',
-  'assigned',
-  'in_coaching',
-  'review',
-  'complete',
+  'unassigned', 'assigned', 'in_coaching', 'review', 'complete',
 ])
 
 // ============================================================
 // APP USERS
-// Every authorized user of the platform. Created when an invite
-// is accepted. The source of truth for role-based access control.
+// Every authorized user of the platform. Created on invite accept.
 //
 // opsManagerClerkId  — set for AMs, points to their Ops Manager
 // areaManagerClerkId — set for CTs, points to their Area Manager
@@ -207,7 +243,7 @@ export const performanceWeeks = pgTable(
   'performance_weeks',
   {
     id: serial('id').primaryKey(),
-    weekDate: date('week_date').notNull(),         // Monday of the week
+    weekDate: date('week_date').notNull(),
     managerName: varchar('manager_name', { length: 200 }).notNull(),
     jobTitle: varchar('job_title', { length: 200 }).notNull(),
     employeeName: varchar('employee_name', { length: 200 }).notNull(),
@@ -228,8 +264,8 @@ export const performanceWeeks = pgTable(
 // ============================================================
 // PERFORMANCE DAYS
 // Individual day breakdowns parsed from the same weekly CSV.
-// Used for the "bad day / good week" flag cards shown to managers
-// — these do NOT trigger coaching sessions on their own.
+// Used for the "bad day / good week" flag cards shown to managers.
+// These do NOT trigger coaching sessions on their own.
 // ============================================================
 
 export const performanceDays = pgTable(
@@ -260,13 +296,13 @@ export const performanceDays = pgTable(
 // CHECKLIST TEMPLATES
 // Preset observation checklists used by CTs during coaching.
 // items: [{ id: string, category: string, text: string }]
-// Scoped to a job title when jobTitle is set; null = applies to all.
+// Universal — any CT can pick any checklist for any employee
+// (everyone is cross-trained, so department/job title does not scope them).
 // ============================================================
 
 export const checklistTemplates = pgTable('checklist_templates', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 200 }).notNull(),
-  jobTitle: varchar('job_title', { length: 200 }),
   items: jsonb('items').notNull().default('[]'),
   isActive: boolean('is_active').notNull().default(true),
   createdByClerkId: varchar('created_by_clerk_id', { length: 100 }).notNull(),
@@ -275,13 +311,91 @@ export const checklistTemplates = pgTable('checklist_templates', {
 })
 
 // ============================================================
+// COACHING ROSTER
+// One row per employee tracked on the disciplinary board.
+// Tracks where the employee is in their escalation journey and
+// aggregates week-over-week consecutive flag/clear counts for
+// the 4-week reset rule.
+//
+// stageHistory (JSONB array):
+//   [{ stage, changedAt, changedByClerkId, reason, type: 'auto'|'manual'|'system' }]
+// ============================================================
+
+export const coachingRoster = pgTable(
+  'coaching_roster',
+  {
+    id: serial('id').primaryKey(),
+    employeeName: varchar('employee_name', { length: 200 }).notNull(),
+    managerName: varchar('manager_name', { length: 200 }).notNull(),
+    jobTitle: varchar('job_title', { length: 200 }).notNull(),
+    currentStage: escalationStageEnum('current_stage').notNull().default('roster'),
+    cardStatus: cardStatusEnum('card_status').notNull().default('in_progress'),
+    // Trigger snapshot from the week that first placed them here
+    triggerPph: real('trigger_pph'),
+    triggerGapPct: real('trigger_gap_pct'),
+    triggerDirectPct: real('trigger_direct_pct'),
+    firstFlaggedWeekDate: date('first_flagged_week_date'),
+    lastFlaggedWeekDate: date('last_flagged_week_date'),
+    // Consecutive weeks below threshold (drives auto-advance detection)
+    consecutiveWeeksFlagged: integer('consecutive_weeks_flagged').notNull().default(0),
+    // Consecutive weeks above threshold (drives 4-week reset)
+    consecutiveWeeksCleared: integer('consecutive_weeks_cleared').notNull().default(0),
+    // Full audit trail of every stage change
+    stageHistory: jsonb('stage_history').notNull().default('[]'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // One active roster entry per employee (re-entry after 4-week reset
+    // reuses this row, resetting stage and counters)
+    activeEmpIdx: uniqueIndex('coaching_roster_active_emp_idx').on(table.employeeName, table.isActive),
+    managerIdx: index('coaching_roster_manager_idx').on(table.managerName),
+    stageIdx: index('coaching_roster_stage_idx').on(table.currentStage),
+  })
+)
+
+// ============================================================
+// COACHING APPROVALS
+// Every action that requires OM/GM sign-off before it takes effect:
+//   auto_advance — system detected an employee should move up a stage
+//   manual_move  — AM dragged a card to a different stage
+//   exempt       — AM marked an employee as exempt
+//
+// The card does NOT move until status = 'approved'.
+// pendingStage is the target stage for auto_advance and manual_move.
+// ============================================================
+
+export const coachingApprovals = pgTable(
+  'coaching_approvals',
+  {
+    id: serial('id').primaryKey(),
+    rosterEntryId: integer('roster_entry_id').notNull().references(() => coachingRoster.id),
+    type: approvalTypeEnum('type').notNull(),
+    requestedByClerkId: varchar('requested_by_clerk_id', { length: 100 }).notNull(),
+    fromStage: escalationStageEnum('from_stage').notNull(),
+    toStage: escalationStageEnum('to_stage'),          // null for exempt requests
+    reason: text('reason').notNull(),                   // AM must always provide a reason
+    status: approvalStatusEnum('status').notNull().default('pending'),
+    reviewedByClerkId: varchar('reviewed_by_clerk_id', { length: 100 }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewNotes: text('review_notes'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    rosterIdx: index('coaching_approvals_roster_idx').on(table.rosterEntryId),
+    statusIdx: index('coaching_approvals_status_idx').on(table.status),
+    reviewerIdx: index('coaching_approvals_reviewer_idx').on(table.reviewedByClerkId),
+  })
+)
+
+// ============================================================
 // COACHING SESSIONS
-// Full lifecycle: unassigned → assigned → in_coaching → review → complete
+// One session per escalation stage per roster entry.
+// Tracks the CT assignment and checklist lifecycle within a
+// specific stage of an employee's coaching journey.
 //
-// triggerPph / triggerGapPct / triggerDirectPct — snapshot of the
-// values from the week that generated this session.
-//
-// formData — CT's completed checklist responses:
+// formData (JSONB):
 //   [{ id: string, result: 'pass' | 'fail', comment?: string }]
 // ============================================================
 
@@ -289,7 +403,9 @@ export const coachingSessions = pgTable(
   'coaching_sessions',
   {
     id: serial('id').primaryKey(),
-    weekDate: date('week_date').notNull(),
+    rosterEntryId: integer('roster_entry_id').notNull().references(() => coachingRoster.id),
+    escalationStage: escalationStageEnum('escalation_stage').notNull(),
+    weekDate: date('week_date').notNull(),              // week that triggered this stage
     employeeName: varchar('employee_name', { length: 200 }).notNull(),
     managerName: varchar('manager_name', { length: 200 }).notNull(),
     jobTitle: varchar('job_title', { length: 200 }).notNull(),
@@ -311,10 +427,14 @@ export const coachingSessions = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    weekEmpIdx: uniqueIndex('coaching_sessions_week_emp_idx').on(table.weekDate, table.employeeName),
-    managerIdx: index('coaching_sessions_manager_idx').on(table.managerName),
+    // One session per stage per roster entry
+    rosterStageIdx: uniqueIndex('coaching_sessions_roster_stage_idx').on(
+      table.rosterEntryId,
+      table.escalationStage
+    ),
     statusIdx: index('coaching_sessions_status_idx').on(table.status),
     ctIdx: index('coaching_sessions_ct_idx').on(table.assignedCtClerkId),
+    managerIdx: index('coaching_sessions_manager_idx').on(table.managerName),
   })
 )
 
@@ -344,6 +464,14 @@ export type PerformanceDay = typeof performanceDays.$inferSelect
 export type NewPerformanceDay = typeof performanceDays.$inferInsert
 export type ChecklistTemplate = typeof checklistTemplates.$inferSelect
 export type NewChecklistTemplate = typeof checklistTemplates.$inferInsert
+export type CoachingRosterEntry = typeof coachingRoster.$inferSelect
+export type NewCoachingRosterEntry = typeof coachingRoster.$inferInsert
+export type CoachingApproval = typeof coachingApprovals.$inferSelect
+export type NewCoachingApproval = typeof coachingApprovals.$inferInsert
 export type CoachingSession = typeof coachingSessions.$inferSelect
 export type NewCoachingSession = typeof coachingSessions.$inferInsert
+export type EscalationStage = typeof escalationStageEnum.enumValues[number]
+export type CardStatus = typeof cardStatusEnum.enumValues[number]
+export type ApprovalType = typeof approvalTypeEnum.enumValues[number]
+export type ApprovalStatus = typeof approvalStatusEnum.enumValues[number]
 export type CoachingStatus = typeof coachingStatusEnum.enumValues[number]

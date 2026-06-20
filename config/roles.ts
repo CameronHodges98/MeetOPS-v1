@@ -18,9 +18,14 @@ export const ROUTE_PERMISSIONS: Record<string, AppRole[]> = {
   '/shift-plan': ['root', 'gm', 'ops', 'am'],
   '/uph-tracker': ['root', 'gm', 'ops'],
   '/cycle-time':  ['root', 'gm', 'ops'],
-  '/coaching':    ['root', 'gm', 'ops', 'am', 'ct'],
+  '/coaching':    ['root', 'gm', 'ops', 'am'],
+  '/ct':          ['root', 'ct'],
   '/admin':       ['root', 'gm'],
 }
+
+// Certified Trainers are locked to a single surface. Every other page route
+// redirects them back to their workspace (enforced in middleware.ts).
+export const CT_HOME = '/ct'
 
 export function canAccess(role: AppRole, path: string): boolean {
   const allowed = ROUTE_PERMISSIONS[path]
